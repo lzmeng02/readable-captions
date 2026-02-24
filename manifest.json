@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Readable Captions (可读字幕)",
+  "version": "0.1.0",
+  "description": "Turn captions into readable paragraphs.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.bilibili.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.bilibili.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
