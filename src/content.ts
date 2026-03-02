@@ -47,7 +47,7 @@ function ensureHostBefore(anchor: Element): HTMLElement {
 }
 
 
-function mountPanel(host: HTMLElement): void {
+function mountPanel(host: HTMLElement, data: { transcript: any[] | null; source: string }): void {
 
 	const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
 
@@ -63,10 +63,10 @@ function mountPanel(host: HTMLElement): void {
 	let mode: Mode = "ts";
   	const setMode = (m: Mode): void => {
     	mode = m;
-    	render(panelTemplate(mode, setMode), shadow);
+    	render(panelTemplate(mode, setMode, data), shadow);
   	};
 
-  	render(panelTemplate(mode, setMode), shadow);
+  	render(panelTemplate(mode, setMode, data), shadow);
 }
 
 
@@ -74,15 +74,15 @@ async function main() {
 
   	const anchor = await waitForElm(ANCHOR_ID);
   	const host = ensureHostBefore(anchor);
+	
 
 	const { transcript, source } = await getBiliTranscript(location.href);
 	console.log("RC subtitle source:", source, "lines:", transcript?.length);
 	console.log("RC transcript type:", Array.isArray(transcript), typeof transcript);
 	console.log("RC transcript sample:", Array.isArray(transcript) ? transcript.slice(0, 3) : transcript);
 
-  	mountPanel(host);
+  	mountPanel(host, { transcript, source });
 
-	
 }
 
 main();
