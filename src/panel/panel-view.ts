@@ -155,7 +155,7 @@ export function panelTemplate(
                 </div>
             </header>
 
-            <nav class="tabs">
+            <nav class="segment-control">
                 ${tab("read", "可读")}
                 ${tab("summary", "摘要")}
                 ${tab("ts", "原转写")}
@@ -235,42 +235,43 @@ export const panelStyles = css`
         color: #111;
     }
 
-    /* 标签页 */
-    .tabs {
+    /* 胶囊分段选择器 (Segmented Control) */
+    .segment-control {
         display: flex;
-        gap: 20px;
-        padding: 0 20px;
-        border-bottom: 1px solid #f0f0f0;
-        overflow-x: auto;
-        scrollbar-width: none;
-    }
-    .tabs::-webkit-scrollbar {
-        display: none;
+        background: #f4f4f5; /* 浅灰底色 */
+        border-radius: 8px;
+        padding: 4px;
+        margin: 0 20px 8px 20px; /* 居中并增加边距 */
     }
 
-    .tab {
-        border: 0;
+    .segment-control .tab {
+        flex: 1; /* 均分宽度 */
+        text-align: center;
+        border: none;
         background: transparent;
+        padding: 6px 0;
+        font-size: 13px;
+        color: #666;
+        border-radius: 6px;
         cursor: pointer;
-        padding: 12px 2px 10px;
-        font-size: 14px;
-        color: #888;
-        border-bottom: 2px solid transparent;
-        white-space: nowrap;
-        transition: color 0.2s ease;
-    }
-    .tab:hover {
-        color: #444;
-    }
-    .tab.active {
-        color: #111;
-        border-bottom-color: #111;
+        transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
         font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .segment-control .tab:hover {
+        color: #111;
+    }
+
+    .segment-control .tab.active {
+        background: #ffffff; /* 选中项为白色 */
+        color: #111;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04); /* 精致的悬浮阴影 */
     }
 
     /* 内容区域 */
     .content {
-        padding: 16px 20px;
+        padding: 12px 20px 16px;
         overflow-y: auto;
         font-size: 14px;
         line-height: 1.6;
@@ -356,8 +357,8 @@ export const panelStyles = css`
     
     .paragraph {
         margin: 0;
-        font-size: 15px;      /* 稍大的字号以利于阅读 */
-        line-height: 1.75;    /* 宽松的行高 */
+        font-size: 15px;      
+        line-height: 1.75;    
         color: #222;
         text-align: justify;
     }
@@ -438,7 +439,7 @@ export const panelStyles = css`
         display: inline-block;
         font-size: 12px;
         color: #fff;
-        background: #ccc;  /* 摘要里的时间戳做成小标签会更好看 */
+        background: #ccc;  
         padding: 2px 6px;
         border-radius: 4px;
         font-variant-numeric: tabular-nums;
