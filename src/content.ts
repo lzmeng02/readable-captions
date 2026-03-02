@@ -2,7 +2,7 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel/panel-view";
 import type { Mode } from "./panel/panel-view";
-import { getBiliTranscriptPreferHuman } from "./bilibili";
+import { getBiliTranscript } from "./bilibili";
 
 // I will hardcode it first
 const ROOT_ID = "readable-captions-root";
@@ -75,7 +75,7 @@ async function main() {
   	const anchor = await waitForElm(ANCHOR_ID);
   	const host = ensureHostBefore(anchor);
 
-	const { transcript, source } = await getBiliTranscriptPreferHuman(location.href);
+	const { transcript, source } = await getBiliTranscript(location.href);
 	console.log("RC subtitle source:", source, "lines:", transcript?.length);
 	console.log("RC transcript type:", Array.isArray(transcript), typeof transcript);
 	console.log("RC transcript sample:", Array.isArray(transcript) ? transcript.slice(0, 3) : transcript);
