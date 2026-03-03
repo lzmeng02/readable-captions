@@ -34,6 +34,36 @@ export function panelTemplate(
         v.play().catch(() => {});
     };
 
+    // 渲染元数据和语言选择器 (抽离出来以便复用)
+    const renderMetaBar = () => {
+        const t = data.transcript;
+        const count = t ? t.length : 0;
+        const sourceLabel =
+            data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
+
+        return html`
+            <div class="meta-bar">
+                <div class="meta-info">
+                    <span class="meta-dot"></span>
+                    来源：${sourceLabel} · 共 ${count} 条
+                </div>
+                
+                ${data.source === "ai_wbi" ? html`
+                    <div class="lang-selector">
+                        <select class="lang-select" title="切换语言">
+                            <option value="zh">中文 (AI)</option>
+                            <option value="en">English (AI)</option>
+                            <option value="ja">日本語 (AI)</option>
+                        </select>
+                        <svg class="lang-arrow" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                ` : ""}
+            </div>
+        `;
+    };
+
     // 视图 1：时间轴/原字幕 (基础列表视图)
     const renderTranscriptList = () => {
         const t = data.transcript;
@@ -41,14 +71,8 @@ export function panelTemplate(
             return html`<div class="empty-state">当前视频没有可用字幕</div>`;
         }
 
-        const sourceLabel =
-            data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
-
         return html`
-            <div class="meta">
-                <span class="meta-dot"></span>
-                来源：${sourceLabel} · 共 ${t.length} 条
-            </div>
+            ${renderMetaBar()}
             <div class="list">
                 ${t.map(
                     (l) => html`
@@ -74,6 +98,7 @@ export function panelTemplate(
         }
 
         return html`
+            ${renderMetaBar()}
             <div class="article">
                 ${paragraphs.map((para) => {
                     const firstLine = para[0];
@@ -175,8 +200,8 @@ export const panelStyles = css`
     }
 
     .panel {
-        height: 100%;
-        max-height: 600px;
+        height: 540px; /* 【修改这里】给一个固定的高度，防止切换 Tab 时窗口上下跳动 */
+        max-height: 85vh; /* 增加一个相对最大值，防止在小屏幕笔记本上超出屏幕 */
         display: flex;
         flex-direction: column;
         border-radius: 12px;
@@ -292,14 +317,21 @@ export const panelStyles = css`
         background: #c0c0c0;
     }
 
-    /* ======= 视图 1：时间轴/原转写 ======= */
-    .meta {
+    /* ======= 元数据与语言选择器 ======= */
+    .meta-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between; /* 左右两端对齐 */
+        margin-bottom: 14px;
+    }
+    
+    .meta-info {
         font-size: 12px;
         color: #888;
-        margin-bottom: 14px;
         display: flex;
         align-items: center;
     }
+    
     .meta-dot {
         display: inline-block;
         width: 6px;
@@ -309,6 +341,46 @@ export const panelStyles = css`
         margin-right: 8px;
     }
 
+    /* 原生语言选择器美化 */
+    .lang-selector {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .lang-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background: #f4f4f5;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 4px 24px 4px 10px;
+        font-size: 12px;
+        color: #444;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.2s ease;
+        font-family: inherit;
+    }
+
+    .lang-select:hover {
+        background: #ebebeb;
+        color: #111;
+    }
+
+    .lang-select:focus {
+        border-color: #d4d4d4;
+        background: #fff;
+    }
+
+    .lang-arrow {
+        position: absolute;
+        right: 8px;
+        pointer-events: none; /* 穿透点击，让下拉框正常弹起 */
+        color: #888;
+    }
+
+    /* ======= 视图 1：时间轴/原转写 ======= */
     .list {
         display: flex;
         flex-direction: column;
