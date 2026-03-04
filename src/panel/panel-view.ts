@@ -4,11 +4,20 @@ import type { SubtitleLine } from "../bilibili";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
+// 引入全局状态来记录是否收起面板
+let isCollapsed = false;
+
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
     data: { transcript: SubtitleLine[] | null; source: string },
 ) {
+    // 切换收起/展开状态，并触发重渲染
+    const toggleCollapse = () => {
+        isCollapsed = !isCollapsed;
+        setMode(mode); // 巧妙利用现有的 setMode 触发 Lit 重新渲染
+    };
+
     const tab = (id: Mode, label: string) => {
         const active = mode === id;
         return html`
@@ -160,9 +169,9 @@ export function panelTemplate(
     };
 
     return html`
-        <div class="panel">
+        <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
-                <div class="title">
+                <div class="title" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
                     <div class="name">可读字幕</div>
                     <div class="sub">Readable Captions</div>
                 </div>
@@ -180,14 +189,16 @@ export function panelTemplate(
                 </div>
             </header>
 
-            <nav class="segment-control">
-                ${tab("read", "可读")}
-                ${tab("summary", "摘要")}
-                ${tab("ts", "原转写")}
-                ${tab("cc", "原字幕")}
-            </nav>
+            ${!isCollapsed ? html`
+                <nav class="segment-control">
+                    ${tab("read", "可读")}
+                    ${tab("summary", "摘要")}
+                    ${tab("ts", "原转写")}
+                    ${tab("cc", "原字幕")}
+                </nav>
 
-            <main class="content">${content()}</main>
+                <main class="content">${content()}</main>
+            ` : ""}
         </div>
     `;
 }
@@ -200,8 +211,8 @@ export const panelStyles = css`
     }
 
     .panel {
-        height: 540px; /* 【修改这里】给一个固定的高度，防止切换 Tab 时窗口上下跳动 */
-        max-height: 85vh; /* 增加一个相对最大值，防止在小屏幕笔记本上超出屏幕 */
+        height: 540px; 
+        max-height: 85vh; 
         display: flex;
         flex-direction: column;
         border-radius: 12px;
@@ -212,12 +223,31 @@ export const panelStyles = css`
         color: #333;
     }
 
+    /* 当处于收起状态时，高度变为自适应，仅包含 header */
+    .panel.collapsed {
+        height: auto;
+    }
+
     /* 顶部标题栏 */
     .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 16px 20px 12px;
+    }
+
+    /* 当处于收起状态时，底部 padding 对齐，看起来更匀称 */
+    .panel.collapsed .header {
+        padding: 16px 20px;
+    }
+
+    .title {
+        cursor: pointer;
+        user-select: none;
+        transition: opacity 0.2s ease;
+    }
+    .title:hover {
+        opacity: 0.7;
     }
 
     .title .name {
@@ -263,14 +293,14 @@ export const panelStyles = css`
     /* 胶囊分段选择器 (Segmented Control) */
     .segment-control {
         display: flex;
-        background: #f4f4f5; /* 浅灰底色 */
+        background: #f4f4f5; 
         border-radius: 8px;
         padding: 4px;
-        margin: 0 20px 8px 20px; /* 居中并增加边距 */
+        margin: 0 20px 8px 20px; 
     }
 
     .segment-control .tab {
-        flex: 1; /* 均分宽度 */
+        flex: 1; 
         text-align: center;
         border: none;
         background: transparent;
@@ -289,9 +319,9 @@ export const panelStyles = css`
     }
 
     .segment-control .tab.active {
-        background: #ffffff; /* 选中项为白色 */
+        background: #ffffff; 
         color: #111;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04); /* 精致的悬浮阴影 */
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04); 
     }
 
     /* 内容区域 */
@@ -321,7 +351,7 @@ export const panelStyles = css`
     .meta-bar {
         display: flex;
         align-items: center;
-        justify-content: space-between; /* 左右两端对齐 */
+        justify-content: space-between; 
         margin-bottom: 14px;
     }
     
@@ -376,7 +406,7 @@ export const panelStyles = css`
     .lang-arrow {
         position: absolute;
         right: 8px;
-        pointer-events: none; /* 穿透点击，让下拉框正常弹起 */
+        pointer-events: none; 
         color: #888;
     }
 
