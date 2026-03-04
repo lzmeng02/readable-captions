@@ -186,6 +186,12 @@ export function panelTemplate(
                     <button class="icon-btn" title="更多">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
                     </button>
+                    <button class="icon-btn collapse-btn" title=${isCollapsed ? "展开面板" : "收起面板"} @click=${toggleCollapse}>
+                        ${isCollapsed 
+                            ? html`<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>` 
+                            : html`<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
+                        }
+                    </button>
                 </div>
             </header>
 
@@ -287,6 +293,13 @@ export const panelStyles = css`
     }
     .icon-btn:hover {
         background: #f4f4f5;
+        color: #111;
+    }
+
+    .collapse-btn {
+        color: #888;
+    }
+    .collapse-btn:hover {
         color: #111;
     }
 
