@@ -136,17 +136,18 @@ export function panelTemplate(
                 
                 <div class="summary-points">
                     <h4 class="points-title">章节看点</h4>
-                    <button class="point-item" @click=${() => jump(0)}>
-                        <span class="point-t">00:00</span>
-                        <div class="point-c">伊朗革命卫队总司令相关发言与背景介绍</div>
+                    <!-- 复用 .line, .t, .c 类以保证多视图样式绝对统一 -->
+                    <button class="line" @click=${() => jump(0)}>
+                        <span class="t">00:00</span>
+                        <div class="c">伊朗革命卫队总司令相关发言与背景介绍</div>
                     </button>
-                    <button class="point-item" @click=${() => jump(10)}>
-                        <span class="point-t">00:10</span>
-                        <div class="point-c">2026年特朗普第二次动用军事手段的深层分析</div>
+                    <button class="line" @click=${() => jump(10)}>
+                        <span class="t">00:10</span>
+                        <div class="c">2026年特朗普第二次动用军事手段的深层分析</div>
                     </button>
-                    <button class="point-item" @click=${() => jump(18)}>
-                        <span class="point-t">00:18</span>
-                        <div class="point-c">解读该地区强国及石油生产大国在国际局势中的地位</div>
+                    <button class="line" @click=${() => jump(18)}>
+                        <span class="t">00:18</span>
+                        <div class="c">解读该地区强国及石油生产大国在国际局势中的地位</div>
                     </button>
                 </div>
             </div>
@@ -171,11 +172,13 @@ export function panelTemplate(
     return html`
         <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
+                <!-- 点击标题区域即可收起/展开 -->
                 <div class="title" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
                     <div class="name">可读字幕</div>
                     <div class="sub">Readable Captions</div>
                 </div>
 
+                <!-- 去除了折叠箭头，仅保留三个核心按钮 -->
                 <div class="actions">
                     <button class="icon-btn" title="下载">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -185,12 +188,6 @@ export function panelTemplate(
                     </button>
                     <button class="icon-btn" title="更多">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                    </button>
-                    <button class="icon-btn collapse-btn" title=${isCollapsed ? "展开面板" : "收起面板"} @click=${toggleCollapse}>
-                        ${isCollapsed 
-                            ? html`<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>` 
-                            : html`<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
-                        }
                     </button>
                 </div>
             </header>
@@ -229,7 +226,6 @@ export const panelStyles = css`
         color: #333;
     }
 
-    /* 当处于收起状态时，高度变为自适应，仅包含 header */
     .panel.collapsed {
         height: auto;
     }
@@ -242,7 +238,6 @@ export const panelStyles = css`
         padding: 16px 20px 12px;
     }
 
-    /* 当处于收起状态时，底部 padding 对齐，看起来更匀称 */
     .panel.collapsed .header {
         padding: 16px 20px;
     }
@@ -251,6 +246,7 @@ export const panelStyles = css`
         cursor: pointer;
         user-select: none;
         transition: opacity 0.2s ease;
+        flex: 1; /* 让标题区域撑满左侧，更容易点击 */
     }
     .title:hover {
         opacity: 0.7;
@@ -293,13 +289,6 @@ export const panelStyles = css`
     }
     .icon-btn:hover {
         background: #f4f4f5;
-        color: #111;
-    }
-
-    .collapse-btn {
-        color: #888;
-    }
-    .collapse-btn:hover {
         color: #111;
     }
 
@@ -365,7 +354,7 @@ export const panelStyles = css`
         display: flex;
         align-items: center;
         justify-content: space-between; 
-        margin-bottom: 14px;
+        margin: 0 4px 14px 4px; 
     }
     
     .meta-info {
@@ -384,7 +373,7 @@ export const panelStyles = css`
         margin-right: 8px;
     }
 
-    /* 原生语言选择器美化 */
+    /* 语言选择器 */
     .lang-selector {
         position: relative;
         display: flex;
@@ -394,8 +383,8 @@ export const panelStyles = css`
     .lang-select {
         appearance: none;
         -webkit-appearance: none;
-        background: #f4f4f5;
-        border: 1px solid transparent;
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
         border-radius: 6px;
         padding: 4px 24px 4px 10px;
         font-size: 12px;
@@ -407,13 +396,13 @@ export const panelStyles = css`
     }
 
     .lang-select:hover {
-        background: #ebebeb;
+        background: #f9f9f9;
+        border-color: #d0d0d0;
         color: #111;
     }
 
     .lang-select:focus {
         border-color: #d4d4d4;
-        background: #fff;
     }
 
     .lang-arrow {
@@ -423,7 +412,7 @@ export const panelStyles = css`
         color: #888;
     }
 
-    /* ======= 视图 1：时间轴/原转写 ======= */
+    /* ======= 通用列表项 (多视图复用，保证绝对统一) ======= */
     .list {
         display: flex;
         flex-direction: column;
@@ -433,31 +422,37 @@ export const panelStyles = css`
     .line {
         text-align: left;
         border: none;
-        border-radius: 8px;
-        padding: 10px 12px;
+        border-radius: 6px;
+        padding: 8px 10px; 
         background: transparent;
         cursor: pointer;
         display: flex;
-        gap: 16px;
+        gap: 12px; 
         align-items: flex-start;
-        transition: background-color 0.2s ease;
+        transition: background-color 0.15s ease;
     }
     .line:hover {
-        background: #f7f7f9;
+        background: #f4f5f7; 
     }
 
+    /* 去掉胶囊底色的极简时间戳 */
     .t {
         display: inline-block;
-        font-size: 13px;
+        font-size: 13px; /* 稍微调大一点点，补偿去掉背景后的视觉缩水 */
         color: #999;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
         margin-top: 2px;
+        transition: color 0.2s ease;
+    }
+    
+    .line:hover .t {
+        color: #333; /* 仅加深颜色，不再变色块 */
     }
 
     .c {
         flex: 1 1 auto;
-        color: #222;
+        color: #333; 
         font-size: 14px;
         line-height: 1.5;
     }
@@ -467,7 +462,7 @@ export const panelStyles = css`
         display: flex;
         flex-direction: column;
         gap: 16px;
-        padding: 4px 0;
+        padding: 0 4px; 
     }
     
     .paragraph {
@@ -478,13 +473,15 @@ export const panelStyles = css`
         text-align: justify;
     }
 
+    /* 可读段落里的极简时间戳 */
     .inline-t {
+        display: inline-block;
+        font-size: 13px;
         color: #aaa;
-        font-size: 12px;
         margin-right: 6px;
         font-variant-numeric: tabular-nums;
         cursor: pointer;
-        transition: color 0.2s;
+        transition: color 0.2s ease;
         user-select: none;
     }
     .inline-t:hover {
@@ -496,6 +493,7 @@ export const panelStyles = css`
         display: flex;
         flex-direction: column;
         gap: 20px;
+        padding: 0 4px;
     }
 
     .summary-card {
@@ -531,45 +529,7 @@ export const panelStyles = css`
     .summary-points {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-    }
-
-    .point-item {
-        text-align: left;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 12px;
-        background: transparent;
-        cursor: pointer;
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-        transition: background-color 0.2s ease;
-    }
-    .point-item:hover {
-        background: #f7f7f9;
-    }
-
-    .point-t {
-        display: inline-block;
-        font-size: 12px;
-        color: #fff;
-        background: #ccc;  
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-variant-numeric: tabular-nums;
-        flex: 0 0 auto;
-        margin-top: 1px;
-    }
-    .point-item:hover .point-t {
-        background: #999;
-    }
-
-    .point-c {
-        flex: 1 1 auto;
-        color: #222;
-        font-size: 14px;
-        line-height: 1.5;
+        gap: 2px;
     }
 
     /* ======= 通用 ======= */
