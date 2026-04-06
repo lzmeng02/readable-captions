@@ -74,6 +74,31 @@ Do not over-split files just for architectural purity.
 
 ---
 
+## UI design source of truth
+
+For any panel UI, overflow menu UI, options page UI, form control UI, or visual polish work,
+follow the design rules in:
+
+- `docs/bilibili-ui-guidelines.md`
+
+This document is the source of truth for:
+- colors
+- typography
+- spacing
+- borders
+- radii
+- hover states
+- tabs
+- lists
+- form controls
+- scrollbars
+- visual "don'ts"
+
+Do not invent a new visual style when working on UI.
+Prefer matching the existing Bilibili-native look and the current Readable Captions panel.
+
+---
+
 ## Bilibili-specific constraints
 
 Preserve current runtime behavior unless explicitly asked otherwise.

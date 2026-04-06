@@ -278,6 +278,7 @@ export const panelStyles = css`
     /* 操作按钮 */
     .actions {
         display: flex;
+        align-items: center;
         gap: 4px;
         position: relative;
     }
@@ -300,39 +301,63 @@ export const panelStyles = css`
         color: #18191c;
     }
 
+    .icon-btn.active {
+        background: #f4f5f7;
+        color: #18191c;
+    }
+
     /* B站原生风格 Tab */
     .overflow-menu {
         position: absolute;
-        top: calc(100% + 6px);
+        top: calc(100% + 2px);
         right: 0;
-        min-width: 116px;
+        min-width: 92px;
         padding: 4px;
         border: 1px solid #e3e5e7;
         border-radius: 6px;
         background: #ffffff;
-        box-shadow: 0 8px 24px rgba(24, 25, 28, 0.12);
+        box-shadow: none;
         z-index: 10;
     }
 
     .overflow-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         width: 100%;
         border: none;
         border-radius: 4px;
         background: transparent;
-        color: #18191c;
+        color: #61666d;
         cursor: pointer;
         font-size: 13px;
         line-height: 1.4;
-        padding: 8px 10px;
+        min-height: 32px;
+        padding: 6px 8px;
         text-align: left;
         transition: background-color 0.2s, color 0.2s;
+        white-space: nowrap;
+    }
+
+    .overflow-item-icon {
+        flex: 0 0 auto;
+        color: #9499a0;
+    }
+
+    .overflow-item-label {
+        flex: 0 1 auto;
     }
 
     .overflow-item:hover,
     .overflow-item:focus-visible {
         background: #f4f5f7;
-        color: #00aeec;
+        color: #18191c;
         outline: none;
+    }
+
+    .overflow-item:hover .overflow-item-icon,
+    .overflow-item:focus-visible .overflow-item-icon {
+        color: #00aeec;
     }
 
     .bili-tabs {

@@ -46,10 +46,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         :host {
             display: block;
             min-height: 100vh;
+            background: #f4f5f7;
             color: #18191c;
-            background:
-                radial-gradient(circle at top right, rgba(0, 174, 236, 0.08), transparent 32%),
-                linear-gradient(180deg, #f7fbfd 0%, #f6f7f8 42%, #f6f7f8 100%);
             font-family:
                 -apple-system,
                 BlinkMacSystemFont,
@@ -62,78 +60,88 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                 sans-serif;
         }
 
+        * {
+            box-sizing: border-box;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font-family: inherit;
+        }
+
         main {
-            max-width: 880px;
+            max-width: 760px;
             margin: 0 auto;
-            padding: 40px 20px 56px;
+            padding: 16px 16px 28px;
         }
 
-        .hero {
-            margin-bottom: 24px;
+        .page-stack,
+        form {
+            display: grid;
+            gap: 12px;
         }
 
-        .eyebrow {
-            display: inline-flex;
-            align-items: center;
-            padding: 5px 10px;
-            border-radius: 999px;
-            background: rgba(0, 174, 236, 0.1);
-            color: #00aeec;
+        .surface {
+            border: 1px solid #e3e5e7;
+            border-radius: 6px;
+            background: #ffffff;
+        }
+
+        .page-header {
+            padding: 16px;
+        }
+
+        .brand {
+            margin: 0 0 6px;
             font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            color: #9499a0;
         }
 
         h1 {
-            margin: 12px 0 8px;
-            font-size: clamp(28px, 4vw, 38px);
-            line-height: 1.1;
-            font-weight: 700;
-        }
-
-        .lead {
-            max-width: 720px;
             margin: 0;
+            font-size: 20px;
+            line-height: 1.3;
+            font-weight: 500;
+            color: #18191c;
+        }
+
+        .page-lead {
+            margin: 8px 0 0;
+            font-size: 13px;
+            line-height: 1.6;
             color: #61666d;
-            font-size: 15px;
-            line-height: 1.7;
         }
 
-        form {
-            display: grid;
-            gap: 16px;
-        }
-
-        .card {
-            padding: 20px;
-            border: 1px solid #e3e5e7;
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 10px 28px rgba(24, 25, 28, 0.06);
-            backdrop-filter: blur(6px);
-        }
-
-        .card-header {
-            margin-bottom: 16px;
+        .section-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e3e5e7;
         }
 
         h2 {
-            margin: 0 0 6px;
-            font-size: 18px;
-            font-weight: 600;
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: #18191c;
         }
 
         .section-copy {
-            margin: 0;
-            color: #61666d;
-            font-size: 14px;
-            line-height: 1.6;
+            margin: 4px 0 0;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #9499a0;
+        }
+
+        .section-body {
+            display: grid;
+            gap: 12px;
+            padding: 12px 16px 16px;
         }
 
         .grid {
             display: grid;
-            gap: 14px 16px;
+            gap: 12px 16px;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         }
 
@@ -147,35 +155,60 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
 
         label,
-        .checkbox-label {
+        .checkbox-title {
             font-size: 13px;
-            font-weight: 600;
+            font-weight: 500;
             color: #18191c;
         }
 
         .hint {
             margin: 0;
-            color: #9499a0;
             font-size: 12px;
             line-height: 1.5;
+            color: #9499a0;
         }
 
         input,
         select,
         textarea {
             width: 100%;
-            border: 1px solid #d8dbe0;
-            border-radius: 10px;
+            border: 1px solid #e3e5e7;
             background: #ffffff;
             color: #18191c;
-            font: inherit;
-            padding: 10px 12px;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 8px 10px;
+            transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
         }
 
+        input,
         textarea {
-            min-height: 130px;
-            resize: vertical;
+            border-radius: 6px;
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            border-radius: 4px;
+            padding-right: 28px;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #9499a0 50%),
+                linear-gradient(135deg, #9499a0 50%, transparent 50%);
+            background-position:
+                calc(100% - 12px) calc(50% - 2px),
+                calc(100% - 7px) calc(50% - 2px);
+            background-size: 5px 5px;
+            background-repeat: no-repeat;
+        }
+
+        input:hover,
+        textarea:hover {
+            border-color: #c9ccd0;
+        }
+
+        select:hover {
+            border-color: #00aeec;
+            color: #00aeec;
         }
 
         input:focus,
@@ -183,100 +216,127 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         textarea:focus {
             outline: none;
             border-color: #00aeec;
-            box-shadow: 0 0 0 3px rgba(0, 174, 236, 0.16);
+            box-shadow: 0 0 0 2px rgba(0, 174, 236, 0.1);
         }
 
-        .checkbox {
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .checkbox-row {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 10px;
-            padding: 12px 14px;
-            border: 1px solid #d8dbe0;
-            border-radius: 12px;
+            padding: 10px;
+            border: 1px solid #e3e5e7;
+            border-radius: 6px;
             background: #ffffff;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s;
         }
 
-        .checkbox input {
-            width: 16px;
-            height: 16px;
-            margin: 0;
+        .checkbox-row:hover {
+            background: #f4f5f7;
+        }
+
+        .checkbox-row input {
+            width: 14px;
+            height: 14px;
+            margin: 2px 0 0;
             accent-color: #00aeec;
+            flex: 0 0 auto;
         }
 
-        .status-row {
+        .checkbox-copy {
+            display: grid;
+            gap: 2px;
+        }
+
+        .section-note {
+            padding: 10px 12px;
+            border: 1px solid #e3e5e7;
+            border-radius: 6px;
+            background: #f4f5f7;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #61666d;
+        }
+
+        .footer-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
             flex-wrap: wrap;
-            margin-top: 8px;
+            padding: 12px 16px;
         }
 
         .status {
-            min-height: 20px;
-            font-size: 13px;
+            margin: 0;
+            min-height: 18px;
+            font-size: 12px;
             line-height: 1.5;
-        }
-
-        .status.idle {
-            color: #61666d;
+            color: #9499a0;
         }
 
         .status.success {
-            color: #0f7a41;
+            color: #00aeec;
         }
 
         .status.error {
-            color: #c13515;
+            color: #18191c;
         }
 
-        .actions {
+        .footer-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
 
         .primary-btn {
-            border: none;
-            border-radius: 999px;
-            background: linear-gradient(135deg, #00aeec 0%, #1f9fff 100%);
+            border: 1px solid #00aeec;
+            border-radius: 4px;
+            background: #00aeec;
             color: #ffffff;
             font: inherit;
-            font-weight: 600;
-            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 8px 14px;
             cursor: pointer;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
         }
 
         .primary-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 24px rgba(0, 174, 236, 0.22);
+            background: #008ac5;
+            border-color: #008ac5;
         }
 
         .primary-btn:disabled {
             cursor: progress;
-            transform: none;
-            box-shadow: none;
             opacity: 0.72;
         }
 
         .loading {
+            margin: 0;
+            padding: 16px;
+            font-size: 13px;
+            line-height: 1.6;
             color: #61666d;
-            font-size: 14px;
         }
 
         @media (max-width: 640px) {
             main {
-                padding: 28px 16px 40px;
+                padding: 12px 12px 24px;
             }
 
-            .card {
-                padding: 18px;
-                border-radius: 14px;
-            }
-
-            .status-row {
-                align-items: stretch;
+            .page-header,
+            .section-header,
+            .section-body,
+            .footer-bar {
+                padding-left: 12px;
+                padding-right: 12px;
             }
         }
     `;
@@ -294,7 +354,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     private statusTone: StatusTone = "idle";
 
     @state()
-    private statusMessage = "Changes here prepare future behavior. Summary integration is not active yet.";
+    private statusMessage =
+        "Configuration only. Summary and provider settings are stored now, but not active yet.";
 
     connectedCallback(): void {
         super.connectedCallback();
@@ -361,195 +422,210 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     render() {
         return html`
             <main>
-                <section class="hero">
-                    <span class="eyebrow">Readable Captions</span>
-                    <h1>Extension Settings</h1>
-                    <p class="lead">
-                        Keep panel behavior stable now and prepare the next settings-backed features. Summary
-                        provider fields below are configuration only and do not enable live AI generation yet.
-                    </p>
-                </section>
+                <div class="page-stack">
+                    <section class="surface page-header">
+                        <p class="brand">Readable Captions</p>
+                        <h1>Extension Settings</h1>
+                        <p class="page-lead">
+                            Keep the options page aligned with the in-page panel. Summary and provider fields below
+                            are configuration only for now and do not enable live AI generation yet.
+                        </p>
+                    </section>
 
-                ${this.isLoading
-                    ? html`<section class="card"><p class="loading">Loading settings...</p></section>`
-                    : html`
-                          <form @submit=${this.handleSubmit}>
-                              <section class="card">
-                                  <div class="card-header">
-                                      <h2>General</h2>
-                                      <p class="section-copy">
-                                          Minimal defaults for the panel and summary surface. Stored now, consumed
-                                          later.
-                                      </p>
-                                  </div>
-                                  <div class="grid">
-                                      <div class="field">
-                                          <label for="defaultTab">Default tab</label>
-                                          <select
-                                              id="defaultTab"
-                                              name="defaultTab"
-                                              @change=${this.handleFieldChange}
-                                          >
-                                              ${this.renderSelectOptions(
-                                                  DEFAULT_TAB_VALUES,
-                                                  defaultTabLabels,
-                                                  this.settings.defaultTab,
-                                              )}
-                                          </select>
-                                          <p class="hint">
-                                              Preserves the current panel behavior for now by defaulting to Transcript.
+                    ${this.isLoading
+                        ? html`<section class="surface"><p class="loading">Loading settings...</p></section>`
+                        : html`
+                              <form @submit=${this.handleSubmit}>
+                                  <section class="surface">
+                                      <div class="section-header">
+                                          <h2>General</h2>
+                                          <p class="section-copy">
+                                              Stored defaults for the current panel surface without changing behavior
+                                              yet.
                                           </p>
                                       </div>
+                                      <div class="section-body">
+                                          <div class="grid">
+                                              <div class="field">
+                                                  <label for="defaultTab">Default tab</label>
+                                                  <select
+                                                      id="defaultTab"
+                                                      name="defaultTab"
+                                                      @change=${this.handleFieldChange}
+                                                  >
+                                                      ${this.renderSelectOptions(
+                                                          DEFAULT_TAB_VALUES,
+                                                          defaultTabLabels,
+                                                          this.settings.defaultTab,
+                                                      )}
+                                                  </select>
+                                                  <p class="hint">
+                                                      Current default stays on Transcript until the panel starts using
+                                                      this setting.
+                                                  </p>
+                                              </div>
 
-                                      <div class="field">
-                                          <div class="checkbox">
-                                              <input
-                                                  id="summaryEnabled"
-                                                  type="checkbox"
-                                                  name="summaryEnabled"
-                                                  ?checked=${this.settings.summaryEnabled}
-                                                  @change=${this.handleFieldChange}
-                                              />
-                                              <label class="checkbox-label" for="summaryEnabled">
-                                                  Summary tab enabled
-                                              </label>
+                                              <div class="field field-wide">
+                                                  <label class="checkbox-row" for="summaryEnabled">
+                                                      <input
+                                                          id="summaryEnabled"
+                                                          type="checkbox"
+                                                          name="summaryEnabled"
+                                                          ?checked=${this.settings.summaryEnabled}
+                                                          @change=${this.handleFieldChange}
+                                                      />
+                                                      <span class="checkbox-copy">
+                                                          <span class="checkbox-title">Summary tab enabled</span>
+                                                          <span class="hint">
+                                                              Configuration only. No real summary backend is wired in
+                                                              yet.
+                                                          </span>
+                                                      </span>
+                                                  </label>
+                                              </div>
                                           </div>
-                                          <p class="hint">
-                                              Configuration only. No real summary backend is wired in yet.
+                                      </div>
+                                  </section>
+
+                                  <section class="surface">
+                                      <div class="section-header">
+                                          <h2>Summary</h2>
+                                          <p class="section-copy">
+                                              Provider configuration for future summary support, kept clearly inactive
+                                              for now.
                                           </p>
                                       </div>
+                                      <div class="section-body">
+                                          <div class="section-note">
+                                              Configuration only. These fields are stored for future provider support
+                                              and are not active in the panel yet.
+                                          </div>
+
+                                          <div class="grid">
+                                              <div class="field">
+                                                  <label for="summaryProvider">Provider</label>
+                                                  <select
+                                                      id="summaryProvider"
+                                                      name="summaryProvider"
+                                                      @change=${this.handleFieldChange}
+                                                  >
+                                                      ${this.renderSelectOptions(
+                                                          SUMMARY_PROVIDER_VALUES,
+                                                          summaryProviderLabels,
+                                                          this.settings.summaryProvider,
+                                                      )}
+                                                  </select>
+                                              </div>
+
+                                              <div class="field">
+                                                  <label for="summaryAccessMode">Access mode</label>
+                                                  <select
+                                                      id="summaryAccessMode"
+                                                      name="summaryAccessMode"
+                                                      @change=${this.handleFieldChange}
+                                                  >
+                                                      ${this.renderSelectOptions(
+                                                          SUMMARY_ACCESS_MODE_VALUES,
+                                                          summaryAccessModeLabels,
+                                                          this.settings.summaryAccessMode,
+                                                      )}
+                                                  </select>
+                                                  <p class="hint">Webapp stays future-facing and experimental.</p>
+                                              </div>
+
+                                              <div class="field">
+                                                  <label for="summaryModel">Model</label>
+                                                  <input
+                                                      id="summaryModel"
+                                                      type="text"
+                                                      name="summaryModel"
+                                                      .value=${this.settings.summaryModel}
+                                                      placeholder="e.g. gpt-4.1-mini"
+                                                      @input=${this.handleFieldChange}
+                                                  />
+                                              </div>
+
+                                              <div class="field">
+                                                  <label for="summaryApiKey">API key</label>
+                                                  <input
+                                                      id="summaryApiKey"
+                                                      type="password"
+                                                      name="summaryApiKey"
+                                                      .value=${this.settings.summaryApiKey}
+                                                      autocomplete="off"
+                                                      placeholder="Stored locally in extension storage"
+                                                      @input=${this.handleFieldChange}
+                                                  />
+                                              </div>
+
+                                              <div class="field field-wide">
+                                                  <label for="summaryPromptTemplate">Prompt template</label>
+                                                  <textarea
+                                                      id="summaryPromptTemplate"
+                                                      name="summaryPromptTemplate"
+                                                      .value=${this.settings.summaryPromptTemplate}
+                                                      placeholder="Optional custom instructions for future summary generation."
+                                                      @input=${this.handleFieldChange}
+                                                  ></textarea>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </section>
+
+                                  <section class="surface">
+                                      <div class="section-header">
+                                          <h2>Export</h2>
+                                          <p class="section-copy">
+                                              Future copy and download defaults without moving those actions into the
+                                              overflow menu.
+                                          </p>
+                                      </div>
+                                      <div class="section-body">
+                                          <div class="grid">
+                                              <div class="field">
+                                                  <label for="copyFormat">Copy format</label>
+                                                  <select
+                                                      id="copyFormat"
+                                                      name="copyFormat"
+                                                      @change=${this.handleFieldChange}
+                                                  >
+                                                      ${this.renderSelectOptions(
+                                                          COPY_FORMAT_VALUES,
+                                                          copyFormatLabels,
+                                                          this.settings.copyFormat,
+                                                      )}
+                                                  </select>
+                                              </div>
+
+                                              <div class="field">
+                                                  <label for="downloadFormat">Download format</label>
+                                                  <select
+                                                      id="downloadFormat"
+                                                      name="downloadFormat"
+                                                      @change=${this.handleFieldChange}
+                                                  >
+                                                      ${this.renderSelectOptions(
+                                                          DOWNLOAD_FORMAT_VALUES,
+                                                          downloadFormatLabels,
+                                                          this.settings.downloadFormat,
+                                                      )}
+                                                  </select>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </section>
+
+                                  <div class="surface footer-bar">
+                                      <p class="status ${this.statusTone}">${this.statusMessage}</p>
+                                      <div class="footer-actions">
+                                          <button class="primary-btn" type="submit" ?disabled=${this.isSaving}>
+                                              ${this.isSaving ? "Saving..." : "Save Settings"}
+                                          </button>
+                                      </div>
                                   </div>
-                              </section>
-
-                              <section class="card">
-                                  <div class="card-header">
-                                      <h2>Summary</h2>
-                                      <p class="section-copy">
-                                          Provider configuration is prepared here without changing current panel
-                                          behavior.
-                                      </p>
-                                  </div>
-                                  <div class="grid">
-                                      <div class="field">
-                                          <label for="summaryProvider">Provider</label>
-                                          <select
-                                              id="summaryProvider"
-                                              name="summaryProvider"
-                                              @change=${this.handleFieldChange}
-                                          >
-                                              ${this.renderSelectOptions(
-                                                  SUMMARY_PROVIDER_VALUES,
-                                                  summaryProviderLabels,
-                                                  this.settings.summaryProvider,
-                                              )}
-                                          </select>
-                                      </div>
-
-                                      <div class="field">
-                                          <label for="summaryAccessMode">Access mode</label>
-                                          <select
-                                              id="summaryAccessMode"
-                                              name="summaryAccessMode"
-                                              @change=${this.handleFieldChange}
-                                          >
-                                              ${this.renderSelectOptions(
-                                                  SUMMARY_ACCESS_MODE_VALUES,
-                                                  summaryAccessModeLabels,
-                                                  this.settings.summaryAccessMode,
-                                              )}
-                                          </select>
-                                          <p class="hint">The webapp mode stays future-facing and experimental.</p>
-                                      </div>
-
-                                      <div class="field">
-                                          <label for="summaryModel">Model</label>
-                                          <input
-                                              id="summaryModel"
-                                              type="text"
-                                              name="summaryModel"
-                                              .value=${this.settings.summaryModel}
-                                              placeholder="e.g. gpt-4.1-mini"
-                                              @input=${this.handleFieldChange}
-                                          />
-                                      </div>
-
-                                      <div class="field">
-                                          <label for="summaryApiKey">API key</label>
-                                          <input
-                                              id="summaryApiKey"
-                                              type="password"
-                                              name="summaryApiKey"
-                                              .value=${this.settings.summaryApiKey}
-                                              autocomplete="off"
-                                              placeholder="Stored locally in extension storage"
-                                              @input=${this.handleFieldChange}
-                                          />
-                                      </div>
-
-                                      <div class="field field-wide">
-                                          <label for="summaryPromptTemplate">Prompt template</label>
-                                          <textarea
-                                              id="summaryPromptTemplate"
-                                              name="summaryPromptTemplate"
-                                              .value=${this.settings.summaryPromptTemplate}
-                                              placeholder="Optional custom instructions for future summary generation."
-                                              @input=${this.handleFieldChange}
-                                          ></textarea>
-                                      </div>
-                                  </div>
-                              </section>
-
-                              <section class="card">
-                                  <div class="card-header">
-                                      <h2>Export</h2>
-                                      <p class="section-copy">
-                                          Future copy and download defaults without moving those actions into the
-                                          overflow menu.
-                                      </p>
-                                  </div>
-                                  <div class="grid">
-                                      <div class="field">
-                                          <label for="copyFormat">Copy format</label>
-                                          <select
-                                              id="copyFormat"
-                                              name="copyFormat"
-                                              @change=${this.handleFieldChange}
-                                          >
-                                              ${this.renderSelectOptions(
-                                                  COPY_FORMAT_VALUES,
-                                                  copyFormatLabels,
-                                                  this.settings.copyFormat,
-                                              )}
-                                          </select>
-                                      </div>
-
-                                      <div class="field">
-                                          <label for="downloadFormat">Download format</label>
-                                          <select
-                                              id="downloadFormat"
-                                              name="downloadFormat"
-                                              @change=${this.handleFieldChange}
-                                          >
-                                              ${this.renderSelectOptions(
-                                                  DOWNLOAD_FORMAT_VALUES,
-                                                  downloadFormatLabels,
-                                                  this.settings.downloadFormat,
-                                              )}
-                                          </select>
-                                      </div>
-                                  </div>
-                              </section>
-
-                              <div class="status-row">
-                                  <p class="status ${this.statusTone}">${this.statusMessage}</p>
-                                  <div class="actions">
-                                      <button class="primary-btn" type="submit" ?disabled=${this.isSaving}>
-                                          ${this.isSaving ? "Saving..." : "Save Settings"}
-                                      </button>
-                                  </div>
-                              </div>
-                          </form>
-                      `}
+                              </form>
+                          `}
+                </div>
             </main>
         `;
     }
