@@ -279,6 +279,7 @@ export const panelStyles = css`
     .actions {
         display: flex;
         gap: 4px;
+        position: relative;
     }
 
     .icon-btn {
@@ -300,6 +301,40 @@ export const panelStyles = css`
     }
 
     /* B站原生风格 Tab */
+    .overflow-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        min-width: 116px;
+        padding: 4px;
+        border: 1px solid #e3e5e7;
+        border-radius: 6px;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(24, 25, 28, 0.12);
+        z-index: 10;
+    }
+
+    .overflow-item {
+        width: 100%;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: #18191c;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1.4;
+        padding: 8px 10px;
+        text-align: left;
+        transition: background-color 0.2s, color 0.2s;
+    }
+
+    .overflow-item:hover,
+    .overflow-item:focus-visible {
+        background: #f4f5f7;
+        color: #00aeec;
+        outline: none;
+    }
+
     .bili-tabs {
         display: flex;
         padding: 0 8px; /* 稍微缩减一点外边距，让均分看起来更饱满 */
