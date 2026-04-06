@@ -1,9 +1,10 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
+import type { Transcript } from "../transcript/model";
 
 type PanelData = {
-    transcript: any[] | null;
+    transcript: Transcript | null;
     source: string;
 };
 

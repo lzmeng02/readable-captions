@@ -1,5 +1,5 @@
 import { css, html } from "lit";
-import type { SubtitleLine } from "../bilibili";
+import type { TranscriptLine } from "../transcript/model";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
@@ -9,7 +9,7 @@ let isCollapsed = false;
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
-    data: { transcript: SubtitleLine[] | null; source: string },
+    data: { transcript: TranscriptLine[] | null; source: string },
 ) {
     // 切换收起/展开状态，并触发重渲染
     const toggleCollapse = () => {
