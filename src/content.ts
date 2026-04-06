@@ -1,8 +1,5 @@
-// src/content.ts
-import { render } from "lit";
-import { panelTemplate, panelStyles } from "./panel/panel-view";
-import type { Mode } from "./panel/panel-view";
-import { getBiliTranscript } from "./bilibili";
+import { getTranscriptForUrl } from "./platforms";
+import { mountPanel } from "./panel/mount";
 
 // I will hardcode it first
 const ROOT_ID = "readable-captions-root";
@@ -46,37 +43,13 @@ function ensureHostBefore(anchor: Element): HTMLElement {
 	return host;
 }
 
-
-function mountPanel(host: HTMLElement, data: { transcript: any[] | null; source: string }): void {
-
-	const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-
-	if (!shadow.querySelector("style[data-rc]")) {
-
-		const styleTag = document.createElement("style");
-		styleTag.setAttribute("data-rc", "1");
-		styleTag.textContent = String(panelStyles);
-
-		shadow.appendChild(styleTag);
-	}
-
-	let mode: Mode = "ts";
-  	const setMode = (m: Mode): void => {
-    	mode = m;
-    	render(panelTemplate(mode, setMode, data), shadow);
-  	};
-
-  	render(panelTemplate(mode, setMode, data), shadow);
-}
-
-
 async function main() {
 
   	const anchor = await waitForElm(ANCHOR_ID);
   	const host = ensureHostBefore(anchor);
 	
 
-	const { transcript, source } = await getBiliTranscript(location.href);
+	const { transcript, source } = await getTranscriptForUrl(location.href);
 	console.log("RC subtitle source:", source, "lines:", transcript?.length);
 	console.log("RC transcript type:", Array.isArray(transcript), typeof transcript);
 	console.log("RC transcript sample:", Array.isArray(transcript) ? transcript.slice(0, 3) : transcript);

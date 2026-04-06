@@ -1,4 +1,3 @@
-// src/panel/panel-view.ts
 import { css, html } from "lit";
 import type { SubtitleLine } from "../bilibili";
 
@@ -43,6 +42,18 @@ export function panelTemplate(
         v.play().catch(() => {});
     };
 
+    // 空状态组件 (带图标，更原生)
+    const emptyState = () => html`
+        <div class="empty-state">
+            <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 8H38C39.1046 8 40 8.89543 40 10V38C40 39.1046 39.1046 40 38 40H10C8.89543 40 8 39.1046 8 38V10C8 8.89543 8.89543 8 10 8Z" fill="#F4F5F7" stroke="#E3E5E7" stroke-width="2"/>
+                <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+                <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <p>当前视频没有可用字幕</p>
+        </div>
+    `;
+
     // 渲染元数据和语言选择器 (抽离出来以便复用)
     const renderMetaBar = () => {
         const t = data.transcript;
@@ -53,8 +64,7 @@ export function panelTemplate(
         return html`
             <div class="meta-bar">
                 <div class="meta-info">
-                    <span class="meta-dot"></span>
-                    来源：${sourceLabel} · 共 ${count} 条
+                    来源：${sourceLabel} <span class="meta-divider">|</span> 共 ${count} 条
                 </div>
                 
                 ${data.source === "ai_wbi" ? html`
@@ -76,9 +86,7 @@ export function panelTemplate(
     // 视图 1：时间轴/原字幕 (基础列表视图)
     const renderTranscriptList = () => {
         const t = data.transcript;
-        if (!t || t.length === 0) {
-            return html`<div class="empty-state">当前视频没有可用字幕</div>`;
-        }
+        if (!t || t.length === 0) return emptyState();
 
         return html`
             ${renderMetaBar()}
@@ -98,9 +106,8 @@ export function panelTemplate(
     // 视图 2：可读段落 (模拟将零碎句子聚合成段落)
     const renderReadView = () => {
         const t = data.transcript;
-        if (!t || t.length === 0) return html`<div class="empty-state">当前视频没有可用字幕</div>`;
+        if (!t || t.length === 0) return emptyState();
 
-        // 这里仅为演示 UI，将每 4 句合并为一个“段落”
         const paragraphs = [];
         for (let i = 0; i < t.length; i += 4) {
             paragraphs.push(t.slice(i, i + 4));
@@ -111,11 +118,11 @@ export function panelTemplate(
             <div class="article">
                 ${paragraphs.map((para) => {
                     const firstLine = para[0];
-                    const text = para.map((l) => l.content).join("，"); // 模拟断句组合
+                    const text = para.map((l) => l.content).join("，"); 
                     return html`
                         <p class="paragraph">
                             <span class="inline-t" @click=${() => jump(firstLine.from)}>
-                                [${fmt(firstLine.from)}]
+                                ${fmt(firstLine.from)}
                             </span>
                             ${text}。
                         </p>
@@ -130,13 +137,15 @@ export function panelTemplate(
         return html`
             <div class="summary-container">
                 <div class="summary-card">
-                    <h3 class="summary-title">✨ 核心摘要</h3>
+                    <h3 class="summary-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                        AI 内容摘要
+                    </h3>
                     <p class="summary-desc">这是 AI 生成的视频内容结构化总结，目前为占位设计。后续可接入大模型总结的数据。</p>
                 </div>
                 
                 <div class="summary-points">
                     <h4 class="points-title">章节看点</h4>
-                    <!-- 复用 .line, .t, .c 类以保证多视图样式绝对统一 -->
                     <button class="line" @click=${() => jump(0)}>
                         <span class="t">00:00</span>
                         <div class="c">伊朗革命卫队总司令相关发言与背景介绍</div>
@@ -156,16 +165,12 @@ export function panelTemplate(
 
     const content = () => {
         switch (mode) {
-            case "read":
-                return renderReadView();
+            case "read": return renderReadView();
             case "timeline":
             case "cc":
-            case "ts":
-                return renderTranscriptList();
-            case "summary":
-                return renderSummaryView();
-            default:
-                return renderTranscriptList();
+            case "ts": return renderTranscriptList();
+            case "summary": return renderSummaryView();
+            default: return renderTranscriptList();
         }
     };
 
@@ -173,12 +178,11 @@ export function panelTemplate(
         <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
                 <!-- 点击标题区域即可收起/展开 -->
-                <div class="title" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
-                    <div class="name">可读字幕</div>
-                    <div class="sub">Readable Captions</div>
+                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
+                    <span class="title">可读字幕</span>
+                    <span class="sub-title">Readable Captions</span>
                 </div>
 
-                <!-- 去除了折叠箭头，仅保留三个核心按钮 -->
                 <div class="actions">
                     <button class="icon-btn" title="下载">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -193,7 +197,7 @@ export function panelTemplate(
             </header>
 
             ${!isCollapsed ? html`
-                <nav class="segment-control">
+                <nav class="bili-tabs">
                     ${tab("read", "可读")}
                     ${tab("summary", "摘要")}
                     ${tab("ts", "原转写")}
@@ -209,8 +213,19 @@ export function panelTemplate(
 export const panelStyles = css`
     :host {
         all: initial;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        /* 使用B站标准字体栈 */
+        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
         display: block;
+        box-sizing: border-box;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    /* 修复所有 button 的字体继承问题 */
+    button {
+        font-family: inherit;
     }
 
     .panel {
@@ -218,12 +233,11 @@ export const panelStyles = css`
         max-height: 85vh; 
         display: flex;
         flex-direction: column;
-        border-radius: 12px;
+        border-radius: 6px; /* B站侧边栏通常是较小的圆角 */
         background: #ffffff;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
-        border: 1px solid rgba(0, 0, 0, 0.05);
+        border: 1px solid #e3e5e7; /* B站标准的描边颜色 */
         overflow: hidden;
-        color: #333;
+        color: #18191c; /* B站正文标准色 */
     }
 
     .panel.collapsed {
@@ -235,36 +249,29 @@ export const panelStyles = css`
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 20px 12px;
+        padding: 0 16px;
+        height: 46px; /* 固定高度更严谨 */
+        flex-shrink: 0;
     }
 
-    .panel.collapsed .header {
-        padding: 16px 20px;
+    .title-area {
+        cursor: pointer;
+        user-select: none;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex: 1;
     }
 
     .title {
-        cursor: pointer;
-        user-select: none;
-        transition: opacity 0.2s ease;
-        flex: 1; /* 让标题区域撑满左侧，更容易点击 */
-    }
-    .title:hover {
-        opacity: 0.7;
-    }
-
-    .title .name {
         font-size: 16px;
-        font-weight: 600;
-        color: #111;
-        letter-spacing: 0.3px;
-        line-height: 1.2;
+        font-weight: 500;
+        color: #18191c;
     }
 
-    .title .sub {
+    .sub-title {
         font-size: 12px;
-        color: #888;
-        line-height: 1.2;
-        margin-top: 4px;
+        color: #9499a0;
         font-weight: 400;
     }
 
@@ -278,63 +285,72 @@ export const panelStyles = css`
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
         border: none;
         background: transparent;
-        color: #666;
+        color: #9499a0;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all 0.2s;
     }
     .icon-btn:hover {
-        background: #f4f4f5;
-        color: #111;
+        background: #f4f5f7;
+        color: #18191c;
     }
 
-    /* 胶囊分段选择器 (Segmented Control) */
-    .segment-control {
+    /* B站原生风格 Tab */
+    .bili-tabs {
         display: flex;
-        background: #f4f4f5; 
-        border-radius: 8px;
-        padding: 4px;
-        margin: 0 20px 8px 20px; 
+        padding: 0 8px; /* 稍微缩减一点外边距，让均分看起来更饱满 */
+        border-bottom: 1px solid #e3e5e7;
+        flex-shrink: 0;
     }
 
-    .segment-control .tab {
-        flex: 1; 
-        text-align: center;
-        border: none;
+    .bili-tabs .tab {
+        flex: 1; /* 关键修改：让每个按钮等比例占用所有空间，实现均分 */
+        text-align: center; /* 确保文字在均分的块里居中 */
         background: transparent;
-        padding: 6px 0;
-        font-size: 13px;
-        color: #666;
-        border-radius: 6px;
+        border: none;
+        padding: 10px 0;
+        font-size: 14px;
+        font-family: inherit; /* 强制继承字体，避免由于默认字体差异导致字号不一 */
+        white-space: nowrap;  /* 防止文字换行压缩 */
+        color: #61666d;
         cursor: pointer;
-        transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+        position: relative;
+        transition: color 0.2s;
+    }
+
+    .bili-tabs .tab:hover {
+        color: #00aeec;
+    }
+
+    .bili-tabs .tab.active {
+        color: #00aeec;
         font-weight: 500;
-        white-space: nowrap;
     }
 
-    .segment-control .tab:hover {
-        color: #111;
-    }
-
-    .segment-control .tab.active {
-        background: #ffffff; 
-        color: #111;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04); 
+    .bili-tabs .tab.active::after {
+        content: '';
+        position: absolute;
+        bottom: -1px; /* 盖住父元素的下边框 */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 24px; /* 关键修改：均分后按钮变宽，改为固定的短横线更符合B站设计风格 */
+        height: 2px;
+        background: #00aeec;
+        border-radius: 2px;
     }
 
     /* 内容区域 */
     .content {
-        padding: 12px 20px 16px;
+        padding: 12px 12px 16px;
         overflow-y: auto;
-        font-size: 14px;
-        line-height: 1.6;
         flex: 1;
     }
 
+    /* 细长优雅的滚动条 */
     .content::-webkit-scrollbar {
         width: 6px;
     }
@@ -342,11 +358,11 @@ export const panelStyles = css`
         background: transparent;
     }
     .content::-webkit-scrollbar-thumb {
-        background: #e0e0e0;
-        border-radius: 4px;
+        background: #e3e5e7;
+        border-radius: 3px;
     }
     .content::-webkit-scrollbar-thumb:hover {
-        background: #c0c0c0;
+        background: #c9ccd0;
     }
 
     /* ======= 元数据与语言选择器 ======= */
@@ -354,26 +370,20 @@ export const panelStyles = css`
         display: flex;
         align-items: center;
         justify-content: space-between; 
-        margin: 0 4px 14px 4px; 
+        padding: 0 4px 12px 4px; 
     }
     
     .meta-info {
         font-size: 12px;
-        color: #888;
-        display: flex;
-        align-items: center;
-    }
-    
-    .meta-dot {
-        display: inline-block;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #d4d4d4;
-        margin-right: 8px;
+        color: #9499a0;
     }
 
-    /* 语言选择器 */
+    .meta-divider {
+        margin: 0 6px;
+        color: #e3e5e7;
+    }
+
+    /* 原生语言选择器 */
     .lang-selector {
         position: relative;
         display: flex;
@@ -383,36 +393,35 @@ export const panelStyles = css`
     .lang-select {
         appearance: none;
         -webkit-appearance: none;
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        padding: 4px 24px 4px 10px;
+        background: transparent;
+        border: 1px solid #e3e5e7;
+        border-radius: 4px;
+        padding: 2px 20px 2px 8px;
         font-size: 12px;
-        color: #444;
+        font-family: inherit;
+        color: #61666d;
         cursor: pointer;
         outline: none;
-        transition: all 0.2s ease;
-        font-family: inherit;
+        transition: all 0.2s;
     }
 
     .lang-select:hover {
-        background: #f9f9f9;
-        border-color: #d0d0d0;
-        color: #111;
-    }
-
-    .lang-select:focus {
-        border-color: #d4d4d4;
+        border-color: #00aeec;
+        color: #00aeec;
     }
 
     .lang-arrow {
         position: absolute;
-        right: 8px;
+        right: 6px;
         pointer-events: none; 
-        color: #888;
+        color: #9499a0;
+        transition: color 0.2s;
+    }
+    .lang-select:hover + .lang-arrow {
+        color: #00aeec;
     }
 
-    /* ======= 通用列表项 (多视图复用，保证绝对统一) ======= */
+    /* ======= 通用列表项 ======= */
     .list {
         display: flex;
         flex-direction: column;
@@ -423,38 +432,37 @@ export const panelStyles = css`
         text-align: left;
         border: none;
         border-radius: 6px;
-        padding: 8px 10px; 
+        padding: 8px; 
         background: transparent;
         cursor: pointer;
         display: flex;
         gap: 12px; 
-        align-items: flex-start;
-        transition: background-color 0.15s ease;
+        align-items: baseline; /* 关键修复：使用基线对齐，完美解决大小字体的视觉居中问题 */
+        transition: background-color 0.2s;
     }
     .line:hover {
         background: #f4f5f7; 
     }
 
-    /* 去掉胶囊底色的极简时间戳 */
     .t {
         display: inline-block;
-        font-size: 13px; /* 稍微调大一点点，补偿去掉背景后的视觉缩水 */
-        color: #999;
+        font-size: 12px;
+        color: #9499a0;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
-        margin-top: 2px;
-        transition: color 0.2s ease;
+        margin-top: 0; /* 移除之前为了顶部对齐而加的强行偏移 */
+        transition: color 0.2s;
     }
     
     .line:hover .t {
-        color: #333; /* 仅加深颜色，不再变色块 */
+        color: #00aeec; /* Hover 时时间戳亮起 */
     }
 
     .c {
         flex: 1 1 auto;
-        color: #333; 
-        font-size: 14px;
-        line-height: 1.5;
+        color: #18191c; 
+        font-size: 13px;
+        line-height: 1.6;
     }
 
     /* ======= 视图 2：可读段落 ======= */
@@ -467,63 +475,65 @@ export const panelStyles = css`
     
     .paragraph {
         margin: 0;
-        font-size: 15px;      
-        line-height: 1.75;    
-        color: #222;
+        font-size: 13px;     /* 统一字号：将 14px 改为 13px */ 
+        line-height: 1.6;    /* 统一行高：将 1.8 改为 1.6 */
+        color: #18191c;
         text-align: justify;
     }
 
-    /* 可读段落里的极简时间戳 */
     .inline-t {
         display: inline-block;
-        font-size: 13px;
-        color: #aaa;
+        font-size: 12px;
+        background: #f4f5f7;
+        color: #61666d;
+        padding: 0 6px;
+        border-radius: 4px;
         margin-right: 6px;
         font-variant-numeric: tabular-nums;
         cursor: pointer;
-        transition: color 0.2s ease;
+        transition: all 0.2s;
         user-select: none;
     }
     .inline-t:hover {
-        color: #111;
+        background: #e3e5e7;
+        color: #00aeec;
     }
 
     /* ======= 视图 3：摘要 ======= */
     .summary-container {
         display: flex;
         flex-direction: column;
-        gap: 20px;
+        gap: 16px;
         padding: 0 4px;
     }
 
     .summary-card {
-        background: #f8f9fa;
-        border-radius: 10px;
+        background: #f4f5f7;
+        border-radius: 6px;
         padding: 16px;
-        border: 1px solid #f1f1f1;
     }
 
     .summary-title {
         margin: 0 0 8px 0;
         font-size: 14px;
-        font-weight: 600;
-        color: #111;
+        font-weight: 500;
+        color: #18191c;
+        display: flex;
+        align-items: center;
     }
 
     .summary-desc {
         margin: 0;
-        font-size: 14px;
-        color: #555;
+        font-size: 13px;
+        color: #61666d;
         line-height: 1.6;
     }
 
     .points-title {
-        margin: 0 0 10px 4px;
+        margin: 0 0 8px 4px;
         font-size: 13px;
-        font-weight: 600;
-        color: #888;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        font-weight: 500;
+        color: #18191c;
     }
 
     .summary-points {
@@ -532,11 +542,15 @@ export const panelStyles = css`
         gap: 2px;
     }
 
-    /* ======= 通用 ======= */
-    .empty-state, .placeholder {
-        color: #888;
-        font-size: 14px;
-        text-align: center;
-        padding: 40px 0;
+    /* ======= 空状态 ======= */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #9499a0;
+        font-size: 13px;
+        padding: 60px 0;
+        gap: 12px;
     }
 `;
