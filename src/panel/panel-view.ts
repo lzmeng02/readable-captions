@@ -3,18 +3,33 @@ import type { TranscriptLine } from "../transcript/model";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
-// 引入全局状态来记录是否收起面板
+// 引入全局状态来记录是否收起面板和菜单状态
 let isCollapsed = false;
+let isMenuOpen = false;
 
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
     data: { transcript: TranscriptLine[] | null; source: string },
 ) {
-    // 切换收起/展开状态，并触发重渲染
+    // 切换收起/展开状态
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
-        setMode(mode); // 巧妙利用现有的 setMode 触发 Lit 重新渲染
+        setMode(mode); 
+    };
+
+    // 切换更多菜单状态
+    const toggleMenu = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = !isMenuOpen;
+        setMode(mode);
+    };
+
+    // 关闭菜单
+    const closeMenu = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = false;
+        setMode(mode);
     };
 
     const tab = (id: Mode, label: string) => {
@@ -42,7 +57,7 @@ export function panelTemplate(
         v.play().catch(() => {});
     };
 
-    // 空状态组件 (带图标，更原生)
+    // 空状态组件
     const emptyState = () => html`
         <div class="empty-state">
             <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -54,7 +69,7 @@ export function panelTemplate(
         </div>
     `;
 
-    // 渲染元数据和语言选择器 (抽离出来以便复用)
+    // 渲染元数据和语言选择器
     const renderMetaBar = () => {
         const t = data.transcript;
         const count = t ? t.length : 0;
@@ -83,7 +98,6 @@ export function panelTemplate(
         `;
     };
 
-    // 视图 1：时间轴/原字幕 (基础列表视图)
     const renderTranscriptList = () => {
         const t = data.transcript;
         if (!t || t.length === 0) return emptyState();
@@ -103,7 +117,6 @@ export function panelTemplate(
         `;
     };
 
-    // 视图 2：可读段落 (模拟将零碎句子聚合成段落)
     const renderReadView = () => {
         const t = data.transcript;
         if (!t || t.length === 0) return emptyState();
@@ -132,7 +145,6 @@ export function panelTemplate(
         `;
     };
 
-    // 视图 3：摘要 (AI 结构化总结占位设计)
     const renderSummaryView = () => {
         return html`
             <div class="summary-container">
@@ -177,7 +189,6 @@ export function panelTemplate(
     return html`
         <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
-                <!-- 点击标题区域即可收起/展开 -->
                 <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
                     <span class="title">可读字幕</span>
                     <span class="sub-title">Readable Captions</span>
@@ -190,9 +201,27 @@ export function panelTemplate(
                     <button class="icon-btn" title="复制">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
-                    <button class="icon-btn" title="更多">
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                    </button>
+                    
+                    <!-- 更多选项下拉菜单容器 -->
+                    <div class="more-actions-wrapper">
+                        <button class="icon-btn ${isMenuOpen ? 'active' : ''}" title="更多" @click=${toggleMenu}>
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                        </button>
+                        
+                        ${isMenuOpen ? html`
+                            <div class="menu-overlay" @click=${closeMenu}></div>
+                            <div class="overflow-menu">
+                                <button class="overflow-item">
+                                    <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                                    <span class="overflow-item-label">设置</span>
+                                </button>
+                                <button class="overflow-item">
+                                    <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                    <span class="overflow-item-label">语言：中文</span>
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
                 </div>
             </header>
 
@@ -213,7 +242,6 @@ export function panelTemplate(
 export const panelStyles = css`
     :host {
         all: initial;
-        /* 使用B站标准字体栈 */
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
         display: block;
         box-sizing: border-box;
@@ -223,7 +251,6 @@ export const panelStyles = css`
         box-sizing: border-box;
     }
 
-    /* 修复所有 button 的字体继承问题 */
     button {
         font-family: inherit;
     }
@@ -233,24 +260,23 @@ export const panelStyles = css`
         max-height: 85vh; 
         display: flex;
         flex-direction: column;
-        border-radius: 6px; /* B站侧边栏通常是较小的圆角 */
+        border-radius: 6px; 
         background: #ffffff;
-        border: 1px solid #e3e5e7; /* B站标准的描边颜色 */
-        overflow: hidden;
-        color: #18191c; /* B站正文标准色 */
+        border: 1px solid #e3e5e7; 
+        overflow: hidden; /* 防止内容溢出，但注意：由于下拉菜单的存在，如果面板太小可能会被切断，所以下拉菜单放在 actions 结构中利用绝对定位 */
+        color: #18191c; 
     }
 
     .panel.collapsed {
         height: auto;
     }
 
-    /* 顶部标题栏 */
     .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 0 16px;
-        height: 46px; /* 固定高度更严谨 */
+        height: 46px; 
         flex-shrink: 0;
     }
 
@@ -275,7 +301,6 @@ export const panelStyles = css`
         font-weight: 400;
     }
 
-    /* 操作按钮 */
     .actions {
         display: flex;
         align-items: center;
@@ -302,56 +327,89 @@ export const panelStyles = css`
     }
 
     .icon-btn.active {
-        background: #f4f5f7;
+        background: #e3e5e7; /* 点击打开菜单时更深的底色反馈 */
         color: #18191c;
     }
 
-    /* B站原生风格 Tab */
+    /* ======= 新设计的下拉菜单 ======= */
+    .more-actions-wrapper {
+        position: relative;
+    }
+
+    /* 透明全屏遮罩，用于点击外部关闭菜单 */
+    .menu-overlay {
+        position: fixed;
+        top: 0; 
+        left: 0; 
+        width: 100vw; 
+        height: 100vh;
+        z-index: 90;
+        cursor: default;
+    }
+
     .overflow-menu {
         position: absolute;
-        top: calc(100% + 2px);
+        top: calc(100% + 6px); /* 和按钮保持呼吸感间距 */
         right: 0;
-        min-width: 92px;
-        padding: 4px;
-        border: 1px solid #e3e5e7;
-        border-radius: 6px;
+        width: 124px;
+        padding: 6px;
+        border: 1px solid #e3e5e7; /* 极浅的边框勾勒边缘 */
+        border-radius: 8px; /* 更现代的圆角 */
         background: #ffffff;
-        box-shadow: none;
-        z-index: 10;
+        /* 核心改进：柔和且富有层次的B站标准阴影 */
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0, 0, 0, 0.02);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 2px; /* 菜单项之间留一点点空隙 */
+        transform-origin: top right;
+        animation: menuFadeIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    @keyframes menuFadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.95) translateY(-4px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
     }
 
     .overflow-item {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         width: 100%;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px; /* 内部 Item 的圆角 */
         background: transparent;
-        color: #61666d;
+        color: #18191c; /* B站正文色，提高对比度 */
         cursor: pointer;
         font-size: 13px;
         line-height: 1.4;
-        min-height: 32px;
-        padding: 6px 8px;
+        min-height: 34px;
+        padding: 6px 10px;
         text-align: left;
         transition: background-color 0.2s, color 0.2s;
-        white-space: nowrap;
     }
 
     .overflow-item-icon {
         flex: 0 0 auto;
         color: #9499a0;
+        transition: color 0.2s;
     }
 
     .overflow-item-label {
-        flex: 0 1 auto;
+        flex: 1 1 auto;
     }
 
+    /* 悬浮状态：整条变蓝并拥有底色 */
     .overflow-item:hover,
     .overflow-item:focus-visible {
         background: #f4f5f7;
-        color: #18191c;
+        color: #00aeec;
         outline: none;
     }
 
@@ -360,22 +418,23 @@ export const panelStyles = css`
         color: #00aeec;
     }
 
+    /* ======= B站原生风格 Tab ======= */
     .bili-tabs {
         display: flex;
-        padding: 0 8px; /* 稍微缩减一点外边距，让均分看起来更饱满 */
+        padding: 0 8px; 
         border-bottom: 1px solid #e3e5e7;
         flex-shrink: 0;
     }
 
     .bili-tabs .tab {
-        flex: 1; /* 关键修改：让每个按钮等比例占用所有空间，实现均分 */
-        text-align: center; /* 确保文字在均分的块里居中 */
+        flex: 1; 
+        text-align: center; 
         background: transparent;
         border: none;
         padding: 10px 0;
         font-size: 14px;
-        font-family: inherit; /* 强制继承字体，避免由于默认字体差异导致字号不一 */
-        white-space: nowrap;  /* 防止文字换行压缩 */
+        font-family: inherit; 
+        white-space: nowrap; 
         color: #61666d;
         cursor: pointer;
         position: relative;
@@ -394,23 +453,22 @@ export const panelStyles = css`
     .bili-tabs .tab.active::after {
         content: '';
         position: absolute;
-        bottom: -1px; /* 盖住父元素的下边框 */
+        bottom: -1px; 
         left: 50%;
         transform: translateX(-50%);
-        width: 24px; /* 关键修改：均分后按钮变宽，改为固定的短横线更符合B站设计风格 */
+        width: 24px; 
         height: 2px;
         background: #00aeec;
         border-radius: 2px;
     }
 
-    /* 内容区域 */
+    /* ======= 内容区域 ======= */
     .content {
         padding: 12px 12px 16px;
         overflow-y: auto;
         flex: 1;
     }
 
-    /* 细长优雅的滚动条 */
     .content::-webkit-scrollbar {
         width: 6px;
     }
@@ -443,7 +501,6 @@ export const panelStyles = css`
         color: #e3e5e7;
     }
 
-    /* 原生语言选择器 */
     .lang-selector {
         position: relative;
         display: flex;
@@ -497,7 +554,7 @@ export const panelStyles = css`
         cursor: pointer;
         display: flex;
         gap: 12px; 
-        align-items: baseline; /* 关键修复：使用基线对齐，完美解决大小字体的视觉居中问题 */
+        align-items: baseline; 
         transition: background-color 0.2s;
     }
     .line:hover {
@@ -510,12 +567,12 @@ export const panelStyles = css`
         color: #9499a0;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
-        margin-top: 0; /* 移除之前为了顶部对齐而加的强行偏移 */
+        margin-top: 0; 
         transition: color 0.2s;
     }
     
     .line:hover .t {
-        color: #00aeec; /* Hover 时时间戳亮起 */
+        color: #00aeec; 
     }
 
     .c {
@@ -535,8 +592,8 @@ export const panelStyles = css`
     
     .paragraph {
         margin: 0;
-        font-size: 13px;     /* 统一字号：将 14px 改为 13px */ 
-        line-height: 1.6;    /* 统一行高：将 1.8 改为 1.6 */
+        font-size: 13px;  
+        line-height: 1.6; 
         color: #18191c;
         text-align: justify;
     }
