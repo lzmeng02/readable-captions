@@ -1,5 +1,6 @@
 import { css, html } from "lit";
 import type { TranscriptLine } from "../transcript/model";
+import type { SummaryResult } from "../summary/types";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
@@ -13,7 +14,15 @@ export function panelTemplate(
     data: { transcript: TranscriptLine[] | null; source: string },
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
-    onLangClick?: () => void
+    onLangClick?: () => void,
+    summaryState?: {
+        isSummarizing: boolean;
+        result: SummaryResult | null;
+        error: string | null;
+        onRetry: () => void;
+    },
+    onCopy?: () => void,
+    onDownload?: () => void
 ) {
     // 切换收起/展开状态
     const toggleCollapse = () => {
@@ -171,33 +180,51 @@ export function panelTemplate(
     };
 
     const renderSummaryView = () => {
-        return html`
-            <div class="summary-container">
-                <div class="summary-card">
-                    <h3 class="summary-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                        ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
-                    </h3>
-                    <p class="summary-desc">${currentLang === "zh" ? "这是 AI 生成的视频内容结构化总结，目前为占位设计。后续可接入大模型总结的数据。" : "This is an AI-generated structural summary of the video content, currently a placeholder design."}</p>
+        if (summaryState?.isSummarizing) {
+            return html`
+                <div class="summary-container loading-state">
+                    <div class="bili-loading">
+                        <svg class="circular" viewBox="25 25 50 50">
+                            <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
+                        </svg>
+                        <p>${currentLang === "zh" ? "AI 总结生成中..." : "AI summarizing..."}</p>
+                    </div>
                 </div>
-                
-                <div class="summary-points">
-                    <h4 class="points-title">${currentLang === "zh" ? "章节看点" : "Key Moments"}</h4>
-                    <button class="line" @click=${() => jump(0)}>
-                        <span class="t">00:00</span>
-                        <div class="c">${currentLang === "zh" ? "伊朗革命卫队总司令相关发言与背景介绍" : "Background introduction"}</div>
-                    </button>
-                    <button class="line" @click=${() => jump(10)}>
-                        <span class="t">00:10</span>
-                        <div class="c">${currentLang === "zh" ? "2026年特朗普第二次动用军事手段的深层分析" : "In-depth analysis of recent events"}</div>
-                    </button>
-                    <button class="line" @click=${() => jump(18)}>
-                        <span class="t">00:18</span>
-                        <div class="c">${currentLang === "zh" ? "解读该地区强国及石油生产大国在国际局势中的地位" : "Global impact and position"}</div>
+            `;
+        }
+
+        if (summaryState?.error) {
+            return html`
+                <div class="summary-container error-state">
+                    <svg viewBox="0 0 24 24" width="32" height="32" stroke="#ff6666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <p style="text-align: center; margin: 0 0 16px 0; color: #18191c;">${summaryState.error}</p>
+                    <button class="retry-btn" @click=${summaryState.onRetry}>
+                        ${currentLang === "zh" ? "重试" : "Retry"}
                     </button>
                 </div>
-            </div>
-        `;
+            `;
+        }
+
+        const res = summaryState?.result;
+        if (res && res.text) {
+            const paragraphs = res.text.split("\n").filter(p => p.trim().length > 0);
+            return html`
+                <div class="summary-container">
+                    <div class="summary-card">
+                        <h3 class="summary-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                        </h3>
+                        <div class="summary-desc">
+                            ${paragraphs.map(p => html`<p style="margin: 0 0 8px 0; max-width: 100%; white-space: pre-wrap; word-wrap: break-word;">${p}</p>`)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 默认返回空状态，如果没有可用的数据和状态
+        return emptyState();
     };
 
     const content = () => {
@@ -220,10 +247,10 @@ export function panelTemplate(
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" title="${currentLang === 'zh' ? '下载' : 'Download'}">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '下载' : 'Download'}" @click=${onDownload}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" title="${currentLang === 'zh' ? '复制' : 'Copy'}">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '复制' : 'Copy'}" @click=${onCopy}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
                     
@@ -691,5 +718,63 @@ export const panelStyles = css`
         font-size: 13px;
         padding: 60px 0;
         gap: 12px;
+    }
+
+    /* ======= 摘要加载/报错状态 ======= */
+    .loading-state, .error-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 16px;
+        color: #9499a0;
+        font-size: 13px;
+        min-height: 200px;
+    }
+
+    .bili-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .bili-loading .circular {
+        width: 36px;
+        height: 36px;
+        animation: rotate 2s linear infinite;
+    }
+
+    .bili-loading .path {
+        stroke: #00aeec;
+        stroke-dasharray: 1, 200;
+        stroke-dashoffset: 0;
+        animation: dash 1.5s ease-in-out infinite;
+        stroke-linecap: round;
+    }
+
+    @keyframes rotate {
+        100% { transform: rotate(360deg); }
+    }
+
+    @keyframes dash {
+        0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+        50% { stroke-dasharray: 89, 200; stroke-dashoffset: -35px; }
+        100% { stroke-dasharray: 89, 200; stroke-dashoffset: -124px; }
+    }
+
+    .retry-btn {
+        background: #00aeec;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 16px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .retry-btn:hover {
+        background: #00bdfa;
     }
 `;

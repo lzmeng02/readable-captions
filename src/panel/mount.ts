@@ -3,6 +3,10 @@ import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
+import { llmSummaryProvider } from "../summary/llm-provider";
+import type { SummaryResult } from "../summary/types";
+import { getSettings } from "../settings/storage";
+import { copyTranscript, downloadTranscript } from "./export-utils";
 
 const cleanupKey = Symbol("rcPanelCleanup");
 
@@ -40,15 +44,71 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     let mode: Mode = "ts";
     let uiLanguage: "zh" | "en" = "zh";
+    
+    let summaryResult: SummaryResult | null = null;
+    let isSummarizing = false;
+    let summaryError: string | null = null;
+
+    const generateSummary = () => {
+        if (!data.transcript || data.transcript.length === 0) {
+            summaryError = uiLanguage === "zh" ? "没有字幕数据可供总结" : "No transcript data available for summarization";
+            renderPanel();
+            return;
+        }
+
+        isSummarizing = true;
+        summaryError = null;
+        renderPanel();
+
+        llmSummaryProvider.summarize({ transcript: data.transcript })
+            .then(res => {
+                summaryResult = res;
+            })
+            .catch(err => {
+                summaryError = err.message || (uiLanguage === "zh" ? "生成摘要时发生未知错误" : "Unknown error occurred during summarization.");
+            })
+            .finally(() => {
+                isSummarizing = false;
+                renderPanel();
+            });
+    };
+
+    const handleRetrySummary = () => {
+        summaryResult = null;
+        generateSummary();
+    };
+
+    const handleCopy = async (): Promise<void> => {
+        if (!data.transcript || data.transcript.length === 0) return;
+        const settings = await getSettings();
+        await copyTranscript(data.transcript, settings.copyFormat);
+    };
+
+    const handleDownload = async (): Promise<void> => {
+        if (!data.transcript || data.transcript.length === 0) return;
+        const settings = await getSettings();
+        // 提取 B 站视频标题，去除 " - 哔哩哔哩" 等后缀
+        const videoTitle = document.title.split("_哔哩")[0]?.split("-")[0]?.trim() || "bilibili_video";
+        downloadTranscript(data.transcript, settings.downloadFormat, videoTitle);
+    };
 
     const renderPanel = (): void => {
         // 将 openExtensionOptionsPage 作为回调传入
-        render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang), shadow);
+        render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
+            isSummarizing,
+            result: summaryResult,
+            error: summaryError,
+            onRetry: handleRetrySummary
+        }, handleCopy, handleDownload), shadow);
     };
 
     const setMode = (nextMode: Mode): void => {
         mode = nextMode;
-        renderPanel();
+        if (mode === "summary" && !summaryResult && !isSummarizing && !summaryError) {
+            generateSummary();
+        } else {
+            renderPanel();
+        }
     };
 
     const toggleLang = (): void => {

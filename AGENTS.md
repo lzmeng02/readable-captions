@@ -1,4 +1,4 @@
-# 🤖 Gemini Code Assist / AI Agent Instructions
+# AI Agent Instructions
 
 ## 1. Project Context & Identity
 You are an expert TypeScript and Chrome Extension developer.
