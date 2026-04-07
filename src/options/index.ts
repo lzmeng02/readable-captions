@@ -1,44 +1,11 @@
+// src/options/index.ts
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
 import { getSettings, saveSettings } from "../settings/storage";
 import type { ExtensionSettings } from "../settings/types";
-import {
-    COPY_FORMAT_VALUES,
-    DEFAULT_TAB_VALUES,
-    DOWNLOAD_FORMAT_VALUES,
-    SUMMARY_ACCESS_MODE_VALUES,
-    SUMMARY_PROVIDER_VALUES,
-} from "../settings/types";
 
-type StatusTone = "idle" | "success" | "error";
-
-const defaultTabLabels: Record<(typeof DEFAULT_TAB_VALUES)[number], string> = {
-    read: "Readable",
-    summary: "Summary",
-    ts: "Transcript",
-    cc: "Captions",
-};
-
-const summaryProviderLabels: Record<(typeof SUMMARY_PROVIDER_VALUES)[number], string> = {
-    openai: "OpenAI",
-    deepseek: "DeepSeek",
-};
-
-const summaryAccessModeLabels: Record<(typeof SUMMARY_ACCESS_MODE_VALUES)[number], string> = {
-    api_key: "API key",
-    webapp: "Webapp (experimental)",
-};
-
-const copyFormatLabels: Record<(typeof COPY_FORMAT_VALUES)[number], string> = {
-    readable_text: "Readable text",
-    timestamped_text: "Timestamped text",
-};
-
-const downloadFormatLabels: Record<(typeof DOWNLOAD_FORMAT_VALUES)[number], string> = {
-    txt: "TXT",
-    srt: "SRT",
-};
+type TabId = "general" | "summary" | "export";
 
 @customElement("rc-options-app")
 export class ReadableCaptionsOptionsApp extends LitElement {
@@ -48,314 +15,211 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             min-height: 100vh;
             background: #f4f5f7;
             color: #18191c;
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Helvetica Neue",
-                Helvetica,
-                Arial,
-                "PingFang SC",
-                "Hiragino Sans GB",
-                "Microsoft YaHei",
-                sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            --primary-color: #00aeec;
+            --primary-hover: #008ac5;
         }
 
         * {
             box-sizing: border-box;
         }
 
-        button,
-        input,
-        select,
-        textarea {
-            font-family: inherit;
-        }
-
-        main {
-            max-width: 760px;
-            margin: 0 auto;
-            padding: 16px 16px 28px;
-        }
-
-        .page-stack,
-        form {
-            display: grid;
-            gap: 12px;
-        }
-
-        .surface {
-            border: 1px solid #e3e5e7;
-            border-radius: 6px;
+        .header {
             background: #ffffff;
-        }
-
-        .page-header {
-            padding: 16px;
-        }
-
-        .brand {
-            margin: 0 0 6px;
-            font-size: 12px;
-            color: #9499a0;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 20px;
-            line-height: 1.3;
-            font-weight: 500;
-            color: #18191c;
-        }
-
-        .page-lead {
-            margin: 8px 0 0;
-            font-size: 13px;
-            line-height: 1.6;
-            color: #61666d;
-        }
-
-        .section-header {
-            padding: 12px 16px;
-            border-bottom: 1px solid #e3e5e7;
-        }
-
-        h2 {
-            margin: 0;
-            font-size: 14px;
-            font-weight: 500;
-            color: #18191c;
-        }
-
-        .section-copy {
-            margin: 4px 0 0;
-            font-size: 12px;
-            line-height: 1.5;
-            color: #9499a0;
-        }
-
-        .section-body {
-            display: grid;
-            gap: 12px;
-            padding: 12px 16px 16px;
-        }
-
-        .grid {
-            display: grid;
-            gap: 12px 16px;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        }
-
-        .field {
-            display: grid;
-            gap: 6px;
-        }
-
-        .field-wide {
-            grid-column: 1 / -1;
-        }
-
-        label,
-        .checkbox-title {
-            font-size: 13px;
-            font-weight: 500;
-            color: #18191c;
-        }
-
-        .hint {
-            margin: 0;
-            font-size: 12px;
-            line-height: 1.5;
-            color: #9499a0;
-        }
-
-        input,
-        select,
-        textarea {
-            width: 100%;
-            border: 1px solid #e3e5e7;
-            background: #ffffff;
-            color: #18191c;
-            font-size: 13px;
-            line-height: 1.6;
-            padding: 8px 10px;
-            transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
-        }
-
-        input,
-        textarea {
-            border-radius: 6px;
-        }
-
-        select {
-            appearance: none;
-            -webkit-appearance: none;
-            border-radius: 4px;
-            padding-right: 28px;
-            background-image:
-                linear-gradient(45deg, transparent 50%, #9499a0 50%),
-                linear-gradient(135deg, #9499a0 50%, transparent 50%);
-            background-position:
-                calc(100% - 12px) calc(50% - 2px),
-                calc(100% - 7px) calc(50% - 2px);
-            background-size: 5px 5px;
-            background-repeat: no-repeat;
-        }
-
-        input:hover,
-        textarea:hover {
-            border-color: #c9ccd0;
-        }
-
-        select:hover {
-            border-color: #00aeec;
-            color: #00aeec;
-        }
-
-        input:focus,
-        select:focus,
-        textarea:focus {
-            outline: none;
-            border-color: #00aeec;
-            box-shadow: 0 0 0 2px rgba(0, 174, 236, 0.1);
-        }
-
-        textarea {
-            min-height: 120px;
-            resize: vertical;
-        }
-
-        .checkbox-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            padding: 10px;
-            border: 1px solid #e3e5e7;
-            border-radius: 6px;
-            background: #ffffff;
-            cursor: pointer;
-            transition: background-color 0.2s, border-color 0.2s;
-        }
-
-        .checkbox-row:hover {
-            background: #f4f5f7;
-        }
-
-        .checkbox-row input {
-            width: 14px;
-            height: 14px;
-            margin: 2px 0 0;
-            accent-color: #00aeec;
-            flex: 0 0 auto;
-        }
-
-        .checkbox-copy {
-            display: grid;
-            gap: 2px;
-        }
-
-        .section-note {
-            padding: 10px 12px;
-            border: 1px solid #e3e5e7;
-            border-radius: 6px;
-            background: #f4f5f7;
-            font-size: 12px;
-            line-height: 1.6;
-            color: #61666d;
-        }
-
-        .footer-bar {
+            height: 60px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-            padding: 12px 16px;
+            padding: 0 24px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
-        .status {
+        .header h1 {
             margin: 0;
-            min-height: 18px;
-            font-size: 12px;
-            line-height: 1.5;
-            color: #9499a0;
-        }
-
-        .status.success {
-            color: #00aeec;
-        }
-
-        .status.error {
+            font-size: 18px;
+            font-weight: 500;
             color: #18191c;
-        }
-
-        .footer-actions {
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .primary-btn {
-            border: 1px solid #00aeec;
-            border-radius: 4px;
-            background: #00aeec;
-            color: #ffffff;
-            font: inherit;
-            font-size: 13px;
-            font-weight: 500;
-            line-height: 1.4;
-            padding: 8px 14px;
-            cursor: pointer;
-            transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
+        .container {
+            max-width: 1000px;
+            margin: 24px auto;
+            display: flex;
+            gap: 24px;
+            padding: 0 24px;
         }
 
-        .primary-btn:hover {
-            background: #008ac5;
-            border-color: #008ac5;
+        /* 左侧边栏导航 */
+        .sidebar {
+            width: 200px;
+            flex-shrink: 0;
+            background: #ffffff;
+            border-radius: 6px;
+            padding: 12px 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            align-self: flex-start;
         }
 
-        .primary-btn:disabled {
-            cursor: progress;
-            opacity: 0.72;
-        }
-
-        .loading {
-            margin: 0;
-            padding: 16px;
-            font-size: 13px;
-            line-height: 1.6;
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 24px;
+            font-size: 14px;
             color: #61666d;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
         }
 
-        @media (max-width: 640px) {
-            main {
-                padding: 12px 12px 24px;
-            }
-
-            .page-header,
-            .section-header,
-            .section-body,
-            .footer-bar {
-                padding-left: 12px;
-                padding-right: 12px;
-            }
+        .nav-item:hover {
+            background: #f4f5f7;
+            color: var(--primary-color);
         }
+
+        .nav-item.active {
+            color: var(--primary-color);
+            font-weight: 500;
+            background: #eaf7ff;
+            border-left-color: var(--primary-color);
+        }
+
+        /* 右侧内容区 */
+        .content {
+            flex: 1;
+            background: #ffffff;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            padding: 32px;
+            min-height: 500px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 500;
+            margin: 0 0 24px 0;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e3e5e7;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+            max-width: 480px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #18191c;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: inherit;
+            color: #18191c;
+            background: #f4f5f7;
+            border: 1px solid #e3e5e7;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        select.form-control {
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239499a0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+            padding-right: 32px;
+            cursor: pointer;
+        }
+
+        .form-control:hover, .form-control:focus {
+            border-color: var(--primary-color);
+            background: #ffffff;
+            outline: none;
+        }
+
+        .hint {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: #9499a0;
+            line-height: 1.5;
+        }
+
+        /* 开关切换 (Checkbox) 美化 */
+        .switch-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            gap: 8px;
+        }
+        .switch-label input {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        /* 底部操作栏 */
+        .footer-actions {
+            margin-top: 40px;
+            padding-top: 24px;
+            border-top: 1px solid #e3e5e7;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 16px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-primary:disabled {
+            background: #c9ccd0;
+            cursor: not-allowed;
+        }
+
+        .status-msg {
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .status-msg.visible {
+            opacity: 1;
+        }
+        .status-msg.success { color: #43a047; }
+        .status-msg.error { color: #e53935; }
     `;
 
-    @state()
-    private settings: ExtensionSettings = DEFAULT_SETTINGS;
-
-    @state()
-    private isLoading = true;
-
-    @state()
-    private isSaving = false;
-
-    @state()
-    private statusTone: StatusTone = "idle";
-
-    @state()
-    private statusMessage =
-        "Configuration only. Summary and provider settings are stored now, but not active yet.";
+    @state() private settings: ExtensionSettings = DEFAULT_SETTINGS;
+    @state() private currentTab: TabId = "general";
+    @state() private isSaving = false;
+    @state() private statusTone: "idle" | "success" | "error" = "idle";
+    @state() private statusMessage = "";
 
     connectedCallback(): void {
         super.connectedCallback();
@@ -367,266 +231,122 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             this.settings = await getSettings();
         } catch (error) {
             this.settings = DEFAULT_SETTINGS;
-            this.statusTone = "error";
-            this.statusMessage = error instanceof Error ? error.message : "Failed to load saved settings.";
-        } finally {
-            this.isLoading = false;
         }
     }
 
     private handleFieldChange = (event: Event): void => {
-        const field = event.currentTarget;
-        if (
-            !(field instanceof HTMLInputElement) &&
-            !(field instanceof HTMLSelectElement) &&
-            !(field instanceof HTMLTextAreaElement)
-        ) {
-            return;
-        }
-
+        const field = event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
         const nextValue = field instanceof HTMLInputElement && field.type === "checkbox" ? field.checked : field.value;
         this.settings = mergeSettings({
             ...this.settings,
             [field.name]: nextValue,
         });
-        this.statusTone = "idle";
-        this.statusMessage = "Unsaved changes.";
+        this.statusTone = "idle"; // Reset status on edit
     };
 
-    private async handleSubmit(event: Event): Promise<void> {
-        event.preventDefault();
+    private async handleSubmit(): Promise<void> {
         this.isSaving = true;
-
+        this.statusTone = "idle";
         try {
             this.settings = await saveSettings(this.settings);
             this.statusTone = "success";
-            this.statusMessage = "Settings saved.";
+            this.statusMessage = "设置已成功保存";
+            setTimeout(() => { this.statusTone = "idle"; }, 3000);
         } catch (error) {
             this.statusTone = "error";
-            this.statusMessage = error instanceof Error ? error.message : "Failed to save settings.";
+            this.statusMessage = "保存失败，请重试";
         } finally {
             this.isSaving = false;
         }
     }
 
-    private renderSelectOptions<T extends string>(
-        values: readonly T[],
-        labels: Record<T, string>,
-        selectedValue: T,
-    ) {
-        return values.map((value) => {
-            return html`<option value=${value} ?selected=${selectedValue === value}>${labels[value]}</option>`;
-        });
-    }
-
     render() {
         return html`
-            <main>
-                <div class="page-stack">
-                    <section class="surface page-header">
-                        <p class="brand">Readable Captions</p>
-                        <h1>Extension Settings</h1>
-                        <p class="page-lead">
-                            Keep the options page aligned with the in-page panel. Summary and provider fields below
-                            are configuration only for now and do not enable live AI generation yet.
-                        </p>
-                    </section>
+            <div class="header">
+                <h1>可读字幕 (Readable Captions) 设置</h1>
+            </div>
 
-                    ${this.isLoading
-                        ? html`<section class="surface"><p class="loading">Loading settings...</p></section>`
-                        : html`
-                              <form @submit=${this.handleSubmit}>
-                                  <section class="surface">
-                                      <div class="section-header">
-                                          <h2>General</h2>
-                                          <p class="section-copy">
-                                              Stored defaults for the current panel surface without changing behavior
-                                              yet.
-                                          </p>
-                                      </div>
-                                      <div class="section-body">
-                                          <div class="grid">
-                                              <div class="field">
-                                                  <label for="defaultTab">Default tab</label>
-                                                  <select
-                                                      id="defaultTab"
-                                                      name="defaultTab"
-                                                      @change=${this.handleFieldChange}
-                                                  >
-                                                      ${this.renderSelectOptions(
-                                                          DEFAULT_TAB_VALUES,
-                                                          defaultTabLabels,
-                                                          this.settings.defaultTab,
-                                                      )}
-                                                  </select>
-                                                  <p class="hint">
-                                                      Current default stays on Transcript until the panel starts using
-                                                      this setting.
-                                                  </p>
-                                              </div>
-
-                                              <div class="field field-wide">
-                                                  <label class="checkbox-row" for="summaryEnabled">
-                                                      <input
-                                                          id="summaryEnabled"
-                                                          type="checkbox"
-                                                          name="summaryEnabled"
-                                                          ?checked=${this.settings.summaryEnabled}
-                                                          @change=${this.handleFieldChange}
-                                                      />
-                                                      <span class="checkbox-copy">
-                                                          <span class="checkbox-title">Summary tab enabled</span>
-                                                          <span class="hint">
-                                                              Configuration only. No real summary backend is wired in
-                                                              yet.
-                                                          </span>
-                                                      </span>
-                                                  </label>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  </section>
-
-                                  <section class="surface">
-                                      <div class="section-header">
-                                          <h2>Summary</h2>
-                                          <p class="section-copy">
-                                              Provider configuration for future summary support, kept clearly inactive
-                                              for now.
-                                          </p>
-                                      </div>
-                                      <div class="section-body">
-                                          <div class="section-note">
-                                              Configuration only. These fields are stored for future provider support
-                                              and are not active in the panel yet.
-                                          </div>
-
-                                          <div class="grid">
-                                              <div class="field">
-                                                  <label for="summaryProvider">Provider</label>
-                                                  <select
-                                                      id="summaryProvider"
-                                                      name="summaryProvider"
-                                                      @change=${this.handleFieldChange}
-                                                  >
-                                                      ${this.renderSelectOptions(
-                                                          SUMMARY_PROVIDER_VALUES,
-                                                          summaryProviderLabels,
-                                                          this.settings.summaryProvider,
-                                                      )}
-                                                  </select>
-                                              </div>
-
-                                              <div class="field">
-                                                  <label for="summaryAccessMode">Access mode</label>
-                                                  <select
-                                                      id="summaryAccessMode"
-                                                      name="summaryAccessMode"
-                                                      @change=${this.handleFieldChange}
-                                                  >
-                                                      ${this.renderSelectOptions(
-                                                          SUMMARY_ACCESS_MODE_VALUES,
-                                                          summaryAccessModeLabels,
-                                                          this.settings.summaryAccessMode,
-                                                      )}
-                                                  </select>
-                                                  <p class="hint">Webapp stays future-facing and experimental.</p>
-                                              </div>
-
-                                              <div class="field">
-                                                  <label for="summaryModel">Model</label>
-                                                  <input
-                                                      id="summaryModel"
-                                                      type="text"
-                                                      name="summaryModel"
-                                                      .value=${this.settings.summaryModel}
-                                                      placeholder="e.g. gpt-4.1-mini"
-                                                      @input=${this.handleFieldChange}
-                                                  />
-                                              </div>
-
-                                              <div class="field">
-                                                  <label for="summaryApiKey">API key</label>
-                                                  <input
-                                                      id="summaryApiKey"
-                                                      type="password"
-                                                      name="summaryApiKey"
-                                                      .value=${this.settings.summaryApiKey}
-                                                      autocomplete="off"
-                                                      placeholder="Stored locally in extension storage"
-                                                      @input=${this.handleFieldChange}
-                                                  />
-                                              </div>
-
-                                              <div class="field field-wide">
-                                                  <label for="summaryPromptTemplate">Prompt template</label>
-                                                  <textarea
-                                                      id="summaryPromptTemplate"
-                                                      name="summaryPromptTemplate"
-                                                      .value=${this.settings.summaryPromptTemplate}
-                                                      placeholder="Optional custom instructions for future summary generation."
-                                                      @input=${this.handleFieldChange}
-                                                  ></textarea>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  </section>
-
-                                  <section class="surface">
-                                      <div class="section-header">
-                                          <h2>Export</h2>
-                                          <p class="section-copy">
-                                              Future copy and download defaults without moving those actions into the
-                                              overflow menu.
-                                          </p>
-                                      </div>
-                                      <div class="section-body">
-                                          <div class="grid">
-                                              <div class="field">
-                                                  <label for="copyFormat">Copy format</label>
-                                                  <select
-                                                      id="copyFormat"
-                                                      name="copyFormat"
-                                                      @change=${this.handleFieldChange}
-                                                  >
-                                                      ${this.renderSelectOptions(
-                                                          COPY_FORMAT_VALUES,
-                                                          copyFormatLabels,
-                                                          this.settings.copyFormat,
-                                                      )}
-                                                  </select>
-                                              </div>
-
-                                              <div class="field">
-                                                  <label for="downloadFormat">Download format</label>
-                                                  <select
-                                                      id="downloadFormat"
-                                                      name="downloadFormat"
-                                                      @change=${this.handleFieldChange}
-                                                  >
-                                                      ${this.renderSelectOptions(
-                                                          DOWNLOAD_FORMAT_VALUES,
-                                                          downloadFormatLabels,
-                                                          this.settings.downloadFormat,
-                                                      )}
-                                                  </select>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  </section>
-
-                                  <div class="surface footer-bar">
-                                      <p class="status ${this.statusTone}">${this.statusMessage}</p>
-                                      <div class="footer-actions">
-                                          <button class="primary-btn" type="submit" ?disabled=${this.isSaving}>
-                                              ${this.isSaving ? "Saving..." : "Save Settings"}
-                                          </button>
-                                      </div>
-                                  </div>
-                              </form>
-                          `}
+            <div class="container">
+                <div class="sidebar">
+                    <div class="nav-item ${this.currentTab === "general" ? "active" : ""}" @click=${() => this.currentTab = "general"}>通用设置</div>
+                    <div class="nav-item ${this.currentTab === "summary" ? "active" : ""}" @click=${() => this.currentTab = "summary"}>AI 摘要引擎</div>
+                    <div class="nav-item ${this.currentTab === "export" ? "active" : ""}" @click=${() => this.currentTab = "export"}>导出偏好</div>
                 </div>
-            </main>
+
+                <div class="content">
+                    ${this.currentTab === "general" ? html`
+                        <h2 class="section-title">通用设置</h2>
+                        <div class="form-group">
+                            <label>默认开启标签页</label>
+                            <select class="form-control" name="defaultTab" @change=${this.handleFieldChange}>
+                                <option value="read" ?selected=${this.settings.defaultTab === 'read'}>可读字幕</option>
+                                <option value="summary" ?selected=${this.settings.defaultTab === 'summary'}>摘要</option>
+                                <option value="ts" ?selected=${this.settings.defaultTab === 'ts'}>原转写</option>
+                                <option value="cc" ?selected=${this.settings.defaultTab === 'cc'}>原字幕</option>
+                            </select>
+                            <p class="hint">打开视频时默认展示的字幕面板视图。</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="switch-label">
+                                <input type="checkbox" name="summaryEnabled" ?checked=${this.settings.summaryEnabled} @change=${this.handleFieldChange} />
+                                <span>在面板中显示“摘要”标签</span>
+                            </label>
+                        </div>
+                    ` : ""}
+
+                    ${this.currentTab === "summary" ? html`
+                        <h2 class="section-title">AI 摘要引擎配置</h2>
+                        <p class="hint" style="margin-bottom: 24px; color: #ff8a65;">注：目前摘要功能为占位演示阶段，配置将保存在本地，以供后续版本集成大模型使用。</p>
+                        
+                        <div class="form-group">
+                            <label>模型提供商</label>
+                            <select class="form-control" name="summaryProvider" @change=${this.handleFieldChange}>
+                                <option value="openai" ?selected=${this.settings.summaryProvider === 'openai'}>OpenAI</option>
+                                <option value="deepseek" ?selected=${this.settings.summaryProvider === 'deepseek'}>DeepSeek</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input class="form-control" type="password" name="summaryApiKey" .value=${this.settings.summaryApiKey} @input=${this.handleFieldChange} placeholder="sk-..." />
+                            <p class="hint">密钥将安全地保存在浏览器本地，不会上传。</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label>自定义模型名</label>
+                            <input class="form-control" type="text" name="summaryModel" .value=${this.settings.summaryModel} @input=${this.handleFieldChange} placeholder="例如: gpt-4o-mini" />
+                        </div>
+                    ` : ""}
+
+                    ${this.currentTab === "export" ? html`
+                        <h2 class="section-title">导出与复制偏好</h2>
+                        <div class="form-group">
+                            <label>默认复制格式</label>
+                            <select class="form-control" name="copyFormat" @change=${this.handleFieldChange}>
+                                <option value="readable_text" ?selected=${this.settings.copyFormat === 'readable_text'}>仅文本 (适合阅读)</option>
+                                <option value="timestamped_text" ?selected=${this.settings.copyFormat === 'timestamped_text'}>带时间戳的文本</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>默认下载格式</label>
+                            <select class="form-control" name="downloadFormat" @change=${this.handleFieldChange}>
+                                <option value="txt" ?selected=${this.settings.downloadFormat === 'txt'}>TXT 纯文本</option>
+                                <option value="srt" ?selected=${this.settings.downloadFormat === 'srt'}>SRT 字幕文件</option>
+                            </select>
+                        </div>
+                    ` : ""}
+
+                    <div class="footer-actions">
+                        <button class="btn btn-primary" @click=${this.handleSubmit} ?disabled=${this.isSaving}>
+                            ${this.isSaving ? "保存中..." : "保存设置"}
+                        </button>
+                        <span class="status-msg ${this.statusTone} ${this.statusTone !== 'idle' ? 'visible' : ''}">
+                            ${this.statusMessage}
+                        </span>
+                    </div>
+                </div>
+            </div>
         `;
     }
 }

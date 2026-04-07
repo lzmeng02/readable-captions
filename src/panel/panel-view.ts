@@ -11,6 +11,9 @@ export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
     data: { transcript: TranscriptLine[] | null; source: string },
+    onSettingsClick: () => void,
+    currentLang: "zh" | "en" = "zh",
+    onLangClick?: () => void
 ) {
     // 切换收起/展开状态
     const toggleCollapse = () => {
@@ -25,11 +28,28 @@ export function panelTemplate(
         setMode(mode);
     };
 
-    // 关闭菜单
+    // 点击遮罩关闭菜单
     const closeMenu = (e: Event) => {
         e.stopPropagation();
         isMenuOpen = false;
         setMode(mode);
+    };
+
+    // 处理点击设置选项
+    const handleSettingsClick = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = false; // 关闭菜单
+        setMode(mode);      // 触发重渲染
+        onSettingsClick();  // 调用外部传入的打开设置页方法
+    };
+
+    // 处理点击语言选项
+    const handleLangClick = (e: Event) => {
+        e.stopPropagation();
+        // 语言切换不需要关闭菜单，所以只调外部回调，外部会触发重渲染
+        if (onLangClick) {
+            onLangClick();
+        }
     };
 
     const tab = (id: Mode, label: string) => {
@@ -65,7 +85,7 @@ export function panelTemplate(
                 <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
                 <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
             </svg>
-            <p>当前视频没有可用字幕</p>
+            <p>${currentLang === "zh" ? "当前视频没有可用字幕" : "No captions available for this video"}</p>
         </div>
     `;
 
@@ -73,18 +93,23 @@ export function panelTemplate(
     const renderMetaBar = () => {
         const t = data.transcript;
         const count = t ? t.length : 0;
-        const sourceLabel =
-            data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
+        
+        let sourceLabel = "未知";
+        if (currentLang === "zh") {
+            sourceLabel = data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
+        } else {
+            sourceLabel = data.source === "human_view" ? "Human CC" : data.source === "ai_wbi" ? "AI Auto" : "Unknown";
+        }
 
         return html`
             <div class="meta-bar">
                 <div class="meta-info">
-                    来源：${sourceLabel} <span class="meta-divider">|</span> 共 ${count} 条
+                    ${currentLang === "zh" ? "来源：" : "Source: "}${sourceLabel} <span class="meta-divider">|</span> ${currentLang === "zh" ? "共" : "Total"} ${count} ${currentLang === "zh" ? "条" : "lines"}
                 </div>
                 
                 ${data.source === "ai_wbi" ? html`
                     <div class="lang-selector">
-                        <select class="lang-select" title="切换语言">
+                        <select class="lang-select" title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}">
                             <option value="zh">中文 (AI)</option>
                             <option value="en">English (AI)</option>
                             <option value="ja">日本語 (AI)</option>
@@ -151,24 +176,24 @@ export function panelTemplate(
                 <div class="summary-card">
                     <h3 class="summary-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                        AI 内容摘要
+                        ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
                     </h3>
-                    <p class="summary-desc">这是 AI 生成的视频内容结构化总结，目前为占位设计。后续可接入大模型总结的数据。</p>
+                    <p class="summary-desc">${currentLang === "zh" ? "这是 AI 生成的视频内容结构化总结，目前为占位设计。后续可接入大模型总结的数据。" : "This is an AI-generated structural summary of the video content, currently a placeholder design."}</p>
                 </div>
                 
                 <div class="summary-points">
-                    <h4 class="points-title">章节看点</h4>
+                    <h4 class="points-title">${currentLang === "zh" ? "章节看点" : "Key Moments"}</h4>
                     <button class="line" @click=${() => jump(0)}>
                         <span class="t">00:00</span>
-                        <div class="c">伊朗革命卫队总司令相关发言与背景介绍</div>
+                        <div class="c">${currentLang === "zh" ? "伊朗革命卫队总司令相关发言与背景介绍" : "Background introduction"}</div>
                     </button>
                     <button class="line" @click=${() => jump(10)}>
                         <span class="t">00:10</span>
-                        <div class="c">2026年特朗普第二次动用军事手段的深层分析</div>
+                        <div class="c">${currentLang === "zh" ? "2026年特朗普第二次动用军事手段的深层分析" : "In-depth analysis of recent events"}</div>
                     </button>
                     <button class="line" @click=${() => jump(18)}>
                         <span class="t">00:18</span>
-                        <div class="c">解读该地区强国及石油生产大国在国际局势中的地位</div>
+                        <div class="c">${currentLang === "zh" ? "解读该地区强国及石油生产大国在国际局势中的地位" : "Global impact and position"}</div>
                     </button>
                 </div>
             </div>
@@ -189,35 +214,34 @@ export function panelTemplate(
     return html`
         <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
-                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
-                    <span class="title">可读字幕</span>
-                    <span class="sub-title">Readable Captions</span>
+                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? (currentLang === "zh" ? "点击展开面板" : "Click to expand") : (currentLang === "zh" ? "点击收起面板" : "Click to collapse")}>
+                    <span class="title">${currentLang === "zh" ? "可读字幕" : "Readable Captions"}</span>
+                    <span class="sub-title">${currentLang === "zh" ? "Readable Captions" : ""}</span>
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" title="下载">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '下载' : 'Download'}">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" title="复制">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '复制' : 'Copy'}">
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
                     
-                    <!-- 更多选项下拉菜单容器 -->
                     <div class="more-actions-wrapper">
-                        <button class="icon-btn ${isMenuOpen ? 'active' : ''}" title="更多" @click=${toggleMenu}>
+                        <button class="icon-btn ${isMenuOpen ? 'active' : ''}" title="${currentLang === 'zh' ? '更多' : 'More'}" @click=${toggleMenu}>
                             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
                         </button>
                         
                         ${isMenuOpen ? html`
                             <div class="menu-overlay" @click=${closeMenu}></div>
                             <div class="overflow-menu">
-                                <button class="overflow-item">
+                                <button class="overflow-item" @click=${handleSettingsClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                                    <span class="overflow-item-label">设置</span>
+                                    <span class="overflow-item-label">${currentLang === "zh" ? "设置" : "Settings"}</span>
                                 </button>
-                                <button class="overflow-item">
+                                <button class="overflow-item" @click=${handleLangClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                                    <span class="overflow-item-label">语言：中文</span>
+                                    <span class="overflow-item-label">${currentLang === "zh" ? "语言：中文" : "Lang: English"}</span>
                                 </button>
                             </div>
                         ` : ''}
@@ -227,10 +251,10 @@ export function panelTemplate(
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
-                    ${tab("read", "可读")}
-                    ${tab("summary", "摘要")}
-                    ${tab("ts", "原转写")}
-                    ${tab("cc", "原字幕")}
+                    ${tab("read", currentLang === "zh" ? "可读" : "Read")}
+                    ${tab("summary", currentLang === "zh" ? "摘要" : "Summary")}
+                    ${tab("ts", currentLang === "zh" ? "原转写" : "Transcript")}
+                    ${tab("cc", currentLang === "zh" ? "原字幕" : "CC")}
                 </nav>
 
                 <main class="content">${content()}</main>
@@ -263,7 +287,7 @@ export const panelStyles = css`
         border-radius: 6px; 
         background: #ffffff;
         border: 1px solid #e3e5e7; 
-        overflow: hidden; /* 防止内容溢出，但注意：由于下拉菜单的存在，如果面板太小可能会被切断，所以下拉菜单放在 actions 结构中利用绝对定位 */
+        overflow: hidden; 
         color: #18191c; 
     }
 
@@ -327,7 +351,7 @@ export const panelStyles = css`
     }
 
     .icon-btn.active {
-        background: #e3e5e7; /* 点击打开菜单时更深的底色反馈 */
+        background: #e3e5e7; 
         color: #18191c;
     }
 
@@ -336,7 +360,6 @@ export const panelStyles = css`
         position: relative;
     }
 
-    /* 透明全屏遮罩，用于点击外部关闭菜单 */
     .menu-overlay {
         position: fixed;
         top: 0; 
@@ -349,19 +372,18 @@ export const panelStyles = css`
 
     .overflow-menu {
         position: absolute;
-        top: calc(100% + 6px); /* 和按钮保持呼吸感间距 */
+        top: calc(100% + 6px); 
         right: 0;
-        width: 124px;
+        width: 132px;
         padding: 6px;
-        border: 1px solid #e3e5e7; /* 极浅的边框勾勒边缘 */
-        border-radius: 8px; /* 更现代的圆角 */
+        border: 1px solid #e3e5e7; 
+        border-radius: 8px; 
         background: #ffffff;
-        /* 核心改进：柔和且富有层次的B站标准阴影 */
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0, 0, 0, 0.02);
         z-index: 100;
         display: flex;
         flex-direction: column;
-        gap: 2px; /* 菜单项之间留一点点空隙 */
+        gap: 2px; 
         transform-origin: top right;
         animation: menuFadeIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
@@ -383,9 +405,9 @@ export const panelStyles = css`
         gap: 8px;
         width: 100%;
         border: none;
-        border-radius: 6px; /* 内部 Item 的圆角 */
+        border-radius: 6px; 
         background: transparent;
-        color: #18191c; /* B站正文色，提高对比度 */
+        color: #18191c; 
         cursor: pointer;
         font-size: 13px;
         line-height: 1.4;
@@ -403,9 +425,9 @@ export const panelStyles = css`
 
     .overflow-item-label {
         flex: 1 1 auto;
+        white-space: nowrap;
     }
 
-    /* 悬浮状态：整条变蓝并拥有底色 */
     .overflow-item:hover,
     .overflow-item:focus-visible {
         background: #f4f5f7;
