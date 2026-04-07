@@ -1,74 +1,38 @@
-# AGENTS.md
+# AI Agent Instructions
 
-## Project
-Browser extension for readable captions on video/content platforms.
+## 1. Project Context & Identity
+You are an expert TypeScript and Chrome Extension developer.
+**Project Name**: Readable Captions (可读字幕)
+**Goal**: A browser extension specifically designed for Bilibili (bilibili.com) that extracts video subtitles and formats them into readable paragraphs, with future support for AI-generated summaries. 
+**Design Philosophy**: Seamlessly blend into Bilibili's native UI. Keep abstractions minimal.
 
-Current implementation:
-- Bilibili transcript fetching
-- content script mount into the video page
-- Lit + Shadow DOM panel UI
+## 2. Tech Stack & Architecture
+- **Language**: TypeScript (Strict mode).
+- **Build Tool**: Vite.
+- **UI Framework**: **Lit** (Web Components) for ALL user interfaces (both Content Script Panels and the Options Page).
+- **Styling**: Scoped CSS within Lit components.
 
-Near-term roadmap:
-- AI-generated summary from transcript
-- support for more platforms
-- richer transcript processing
+### Directory Structure:
+- `src/content/`: Chrome extension content scripts (runs on Bilibili pages). Injects the UI anchor and observes route changes.
+- `src/panel/`: The main Lit-based UI panel rendered in a **Shadow DOM** to prevent CSS bleed.
+- `src/options/`: The Lit-based Extension Options page (`chrome.runtime.openOptionsPage()`).
+- `src/settings/`: Wrappers for `chrome.storage.local` to persist user configurations.
+- `src/platforms/`: Logic to fetch and normalize Bilibili transcripts (Human CC & AI WBI).
+- `src/summary/`: (WIP) Interfaces and providers for LLM summarization (OpenAI, DeepSeek).
 
-## Architecture direction
-Organize code by domain boundaries:
+## 3. Strict Development Rules (DO NOT VIOLATE)
 
-- `src/content/`: page integration, mount, route watching
-- `src/platforms/`: platform-specific transcript acquisition
-- `src/transcript/`: normalized transcript model and processing
-- `src/summary/`: summary interfaces and providers
-- `src/panel/`: rendering, state, UI actions
+1. **Lit Everywhere**: Do NOT use vanilla DOM manipulation (`document.createElement`, `innerHTML`) for UI components. Always use Lit's `html` and `css` tagged template literals.
+2. **Shadow DOM for Content Scripts**: Any UI injected into the host page (Bilibili) MUST be encapsulated within a Shadow Root to protect our Bilibili-mimicking styles from the host's CSS.
+3. **Storage**: Always use the functions provided in `src/settings/storage.ts` for reading/writing extension settings. Do not call `chrome.storage.local` directly in UI components.
+4. **Bilibili Specificity**: Do not build abstract "multi-platform" adapters unless explicitly asked. We are highly coupled to Bilibili's DOM and APIs.
+5. **No External UI Libraries**: Do not install or use external UI libraries (like React, Tailwind, or Material UI). We write custom CSS to match Bilibili's native design system.
 
-## Core refactor rule
-This phase is a structural refactor, not a feature redesign.
+## 4. Current State & Roadmap
 
-Preserve current runtime behavior unless explicitly asked otherwise.
-
-## Existing product constraints
-- Keep panel insertion before `div.bpx-player-auxiliary`
-- Keep Shadow DOM rendering
-- Keep current tab structure unless the task explicitly changes UX
-- Keep current Bilibili subtitle source priority:
-  1. human subtitle from view API
-  2. AI subtitle fallback from wbi API
-- Requests to `api.bilibili.com` may include credentials
-- Subtitle JSON/file requests should omit credentials
-
-## Placeholder rules
-Some UI is currently placeholder-only:
-- summary tab
-- download / copy / more actions
-- AI language selector behavior
-
-Do not fake full implementations.
-Prefer explicit stubs, mock providers, or TODO-safe placeholders.
-
-## Engineering rules
-- Make minimal edits
-- Prefer explicit TypeScript types
-- Do not refactor unrelated code
-- Keep files focused and small
-- Separate platform logic from panel/UI logic
-- Separate summary logic from platform fetching
-- Normalize platform subtitle data before rendering or summarizing
-
-## Done when for phase 1
-Phase 1 is complete when:
-
-1. Bilibili fetching logic is isolated behind a platform adapter
-2. transcript has a normalized shared model
-3. summary has interfaces plus a mock provider
-4. panel consumes normalized data instead of platform-specific details
-5. content layer handles only page integration and mounting
-6. project still builds
-7. existing Bilibili flow still works
-8. include a short manual verification checklist
-
-## Review expectations
-For refactors:
-- explain what moved where
-- explain any compatibility risks
-- avoid behavior changes unless necessary
+- ✅ **Phase 1**: Core subtitle fetching (Human + AI) and rendering is complete.
+- ✅ **Phase 2**: Panel UI (Tabs, Dropdown Menus, Shadow DOM injection) is complete.
+- ✅ **Phase 3**: Settings persistence and Lit-based Options Page (`src/options/index.ts`) are completely wired up.
+- 🚧 **Phase 4 (CURRENT)**: Implement the Summary generation backend. 
+  - Need to wire the configurations stored in settings (Provider, API Key, Model) to actual API calls in `src/summary/`.
+  - Handle streaming/loading states in the UI when generating summaries.

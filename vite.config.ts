@@ -3,15 +3,18 @@ import { resolve } from "path";
 
 export default defineConfig({
   build: {
-    rollupOptions: {
-      input: {
-        content: resolve(__dirname, "src/content.ts")
-      },
-      output: {
-        entryFileNames: "[name].js"
-      }
+    lib: {
+      entry: resolve(__dirname, "src/content.ts"),
+      formats: ["iife"],
+      name: "ReadableCaptionsContent",
+      fileName: () => "content.js"
     },
     outDir: "dist",
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true
+      }
+    }
   }
 });

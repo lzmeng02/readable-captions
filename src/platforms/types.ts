@@ -8,6 +8,7 @@ export type PlatformTranscriptResult = {
     subtitleUrl?: string;
     aid?: number;
     cid?: number;
+    availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
 };
 
 export interface PlatformAdapter {
