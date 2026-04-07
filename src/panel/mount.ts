@@ -7,12 +7,16 @@ import { llmSummaryProvider } from "../summary/llm-provider";
 import type { SummaryResult } from "../summary/types";
 import { getSettings } from "../settings/storage";
 import { copyTranscript, downloadTranscript } from "./export-utils";
+import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
+import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
 
 const cleanupKey = Symbol("rcPanelCleanup");
 
 type PanelData = {
     transcript: Transcript | null;
     source: string;
+    availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
+    subtitleUrl?: string;
 };
 
 type HostWithCleanup = HTMLElement & {
@@ -92,6 +96,28 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         downloadTranscript(data.transcript, settings.downloadFormat, videoTitle);
     };
 
+    const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
+        if (!newUrl || newUrl === data.subtitleUrl) return;
+        
+        try {
+            const { body } = await fetchBilibiliSubtitleBody(newUrl);
+            data.transcript = normalizeBilibiliTranscript(body);
+            data.subtitleUrl = newUrl;
+            
+            // 如果处于 summary 模式，重置当前总结（因为语言/内容已切换）
+            if (mode === "summary") {
+                summaryResult = null;
+                isSummarizing = false;
+                summaryError = null;
+                generateSummary();
+            } else {
+                renderPanel();
+            }
+        } catch (err) {
+            console.error("Failed to fetch new language subtitle", err);
+        }
+    };
+
     const renderPanel = (): void => {
         // 将 openExtensionOptionsPage 作为回调传入
         render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
@@ -99,7 +125,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             result: summaryResult,
             error: summaryError,
             onRetry: handleRetrySummary
-        }, handleCopy, handleDownload), shadow);
+        }, handleCopy, handleDownload, handleSubtitleLanguageChange), shadow);
     };
 
     const setMode = (nextMode: Mode): void => {

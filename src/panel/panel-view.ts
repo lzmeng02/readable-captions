@@ -11,7 +11,12 @@ let isMenuOpen = false;
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
-    data: { transcript: TranscriptLine[] | null; source: string },
+    data: { 
+        transcript: TranscriptLine[] | null; 
+        source: string;
+        availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
+        subtitleUrl?: string;
+    },
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
     onLangClick?: () => void,
@@ -22,7 +27,8 @@ export function panelTemplate(
         onRetry: () => void;
     },
     onCopy?: () => void,
-    onDownload?: () => void
+    onDownload?: () => void,
+    onSubtitleLanguageChange?: (url: string) => void
 ) {
     // 切换收起/展开状态
     const toggleCollapse = () => {
@@ -110,18 +116,30 @@ export function panelTemplate(
             sourceLabel = data.source === "human_view" ? "Human CC" : data.source === "ai_wbi" ? "AI Auto" : "Unknown";
         }
 
+        const hasSubtitles = data.availableSubtitles && data.availableSubtitles.length > 0;
+
         return html`
             <div class="meta-bar">
                 <div class="meta-info">
                     ${currentLang === "zh" ? "来源：" : "Source: "}${sourceLabel} <span class="meta-divider">|</span> ${currentLang === "zh" ? "共" : "Total"} ${count} ${currentLang === "zh" ? "条" : "lines"}
                 </div>
                 
-                ${data.source === "ai_wbi" ? html`
+                ${hasSubtitles ? html`
                     <div class="lang-selector">
-                        <select class="lang-select" title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}">
-                            <option value="zh">中文 (AI)</option>
-                            <option value="en">English (AI)</option>
-                            <option value="ja">日本語 (AI)</option>
+                        <select class="lang-select" 
+                            title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}"
+                            @change=${(e: Event) => {
+                                const target = e.target as HTMLSelectElement;
+                                if (onSubtitleLanguageChange) {
+                                    onSubtitleLanguageChange(target.value);
+                                }
+                            }}
+                        >
+                            ${data.availableSubtitles!.map(sub => html`
+                                <option value="${sub.subtitle_url}" ?selected=${sub.subtitle_url === data.subtitleUrl}>
+                                    ${sub.lan_doc}
+                                </option>
+                            `)}
                         </select>
                         <svg class="lang-arrow" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="6 9 12 15 18 9"></polyline>
@@ -574,6 +592,14 @@ export const panelStyles = css`
     .lang-select:hover {
         border-color: #00aeec;
         color: #00aeec;
+    }
+    
+    .lang-select:focus {
+        border-color: #e3e5e7;
+    }
+
+    .lang-select:focus:hover {
+        border-color: #00aeec;
     }
 
     .lang-arrow {

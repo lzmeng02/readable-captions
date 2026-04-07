@@ -14,7 +14,7 @@ async function renderCurrentPage(renderId: number, url: string): Promise<void> {
     }
 
     const host = ensureHostBefore(anchor);
-    const { transcript, source } = await getTranscriptForUrl(url);
+    const { transcript, source, availableSubtitles, subtitleUrl } = await getTranscriptForUrl(url);
 
     if (renderId !== activeRenderId || url !== location.href) {
         return;
@@ -24,7 +24,7 @@ async function renderCurrentPage(renderId: number, url: string): Promise<void> {
     console.log("RC transcript type:", Array.isArray(transcript), typeof transcript);
     console.log("RC transcript sample:", Array.isArray(transcript) ? transcript.slice(0, 3) : transcript);
 
-    mountPanel(host, { transcript, source });
+    mountPanel(host, { transcript, source, availableSubtitles, subtitleUrl });
 }
 
 function scheduleRender(url: string): void {
