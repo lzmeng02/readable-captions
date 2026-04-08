@@ -1,30 +1,85 @@
 import { mountPanel } from "../panel/mount";
 import { getPlatformAdapter, getTranscriptForUrl } from "../platforms";
-import { ensureHostBefore, waitForElm } from "./dom";
+import { ensureHostInside, waitForElm } from "./dom";
 import { watchRouteChange } from "./route-watcher";
 
 const ANCHOR_ID = "div.bpx-player-auxiliary";
+const ROOT_ID = "readable-captions-root"; // From dom.ts
 
 let activeRenderId = 0;
+let currentData: any = null;
+let currentUrl: string = "";
+let persistenceObserver: MutationObserver | null = null;
+
+function mountShell() {
+    const anchor = document.querySelector(ANCHOR_ID);
+    if (!anchor) return;
+    const host = ensureHostInside(anchor);
+    mountPanel(host, { transcript: null, source: "loading", isLoading: true });
+}
+
+function fillData(data: any) {
+    const anchor = document.querySelector(ANCHOR_ID);
+    if (!anchor) return;
+    const host = ensureHostInside(anchor);
+    mountPanel(host, { 
+        transcript: data.transcript, 
+        source: data.source, 
+        availableSubtitles: data.availableSubtitles, 
+        subtitleUrl: data.subtitleUrl,
+        isLoading: false
+    });
+}
+
+function setupPersistence() {
+    if (persistenceObserver) {
+        persistenceObserver.disconnect();
+    }
+    
+    // Watch for removal of our root from within the anchor, or innerHTML clearing
+    persistenceObserver = new MutationObserver(() => {
+        if (!currentUrl) return;
+
+        const anchor = document.querySelector(ANCHOR_ID);
+        if (!anchor) return; // Wait until anchor comes back naturally
+        
+        const host = document.getElementById(ROOT_ID);
+        // If host was removed from anchor
+        if (!host || !anchor.contains(host)) {
+            if (currentData) {
+                fillData(currentData);
+            } else {
+                mountShell();
+            }
+        }
+    });
+
+    persistenceObserver.observe(document.documentElement, { childList: true, subtree: true });
+}
 
 async function renderCurrentPage(renderId: number, url: string): Promise<void> {
-    const anchor = await waitForElm(ANCHOR_ID);
+    currentUrl = url;
+    currentData = null; // reset
+
+    await waitForElm(ANCHOR_ID);
     if (renderId !== activeRenderId || url !== location.href) {
         return;
     }
 
-    const host = ensureHostBefore(anchor);
-    const { transcript, source, availableSubtitles, subtitleUrl } = await getTranscriptForUrl(url);
+    // Stage 1: mount loading shell immediately
+    mountShell();
+    setupPersistence();
+
+    // Stage 2: Fetch data and fill
+    const data = await getTranscriptForUrl(url);
 
     if (renderId !== activeRenderId || url !== location.href) {
         return;
     }
 
-    console.log("RC subtitle source:", source, "lines:", transcript?.length);
-    console.log("RC transcript type:", Array.isArray(transcript), typeof transcript);
-    console.log("RC transcript sample:", Array.isArray(transcript) ? transcript.slice(0, 3) : transcript);
-
-    mountPanel(host, { transcript, source, availableSubtitles, subtitleUrl });
+    console.log("RC subtitle source:", data.source, "lines:", data.transcript?.length);
+    currentData = data;
+    fillData(data);
 }
 
 function scheduleRender(url: string): void {
@@ -46,5 +101,10 @@ export function startContentScript(): void {
         }
 
         activeRenderId += 1;
+        currentUrl = "";
+        currentData = null;
+        if (persistenceObserver) {
+            persistenceObserver.disconnect();
+        }
     });
 }

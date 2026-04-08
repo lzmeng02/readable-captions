@@ -17,6 +17,7 @@ type PanelData = {
     source: string;
     availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
     subtitleUrl?: string;
+    isLoading?: boolean;
 };
 
 type HostWithCleanup = HTMLElement & {

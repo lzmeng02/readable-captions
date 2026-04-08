@@ -1,4 +1,7 @@
 import { css, html } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import type { TranscriptLine } from "../transcript/model";
 import type { SummaryResult } from "../summary/types";
 
@@ -16,6 +19,7 @@ export function panelTemplate(
         source: string;
         availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
         subtitleUrl?: string;
+        isLoading?: boolean;
     },
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
@@ -92,17 +96,32 @@ export function panelTemplate(
         v.play().catch(() => {});
     };
 
-    // 空状态组件
-    const emptyState = () => html`
-        <div class="empty-state">
-            <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 8H38C39.1046 8 40 8.89543 40 10V38C40 39.1046 39.1046 40 38 40H10C8.89543 40 8 39.1046 8 38V10C8 8.89543 8.89543 8 10 8Z" fill="#F4F5F7" stroke="#E3E5E7" stroke-width="2"/>
-                <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
-                <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <p>${currentLang === "zh" ? "当前视频没有可用字幕" : "No captions available for this video"}</p>
-        </div>
-    `;
+    // 空状态 / 加载状态组件
+    const emptyState = () => {
+        if (data.isLoading) {
+            return html`
+                <div class="empty-state">
+                    <div class="bili-loading">
+                        <svg class="circular" viewBox="25 25 50 50">
+                            <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
+                        </svg>
+                        <p>${currentLang === "zh" ? "正在加载字幕..." : "Loading captions..."}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        return html`
+            <div class="empty-state">
+                <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M10 8H38C39.1046 8 40 8.89543 40 10V38C40 39.1046 39.1046 40 38 40H10C8.89543 40 8 39.1046 8 38V10C8 8.89543 8.89543 8 10 8Z" fill="#F4F5F7" stroke="#E3E5E7" stroke-width="2"/>
+                    <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <p>${currentLang === "zh" ? "当前视频没有可用字幕" : "No captions available for this video"}</p>
+            </div>
+        `;
+    };
 
     // 渲染元数据和语言选择器
     const renderMetaBar = () => {
@@ -225,17 +244,17 @@ export function panelTemplate(
 
         const res = summaryState?.result;
         if (res && res.text) {
-            const paragraphs = res.text.split("\n").filter(p => p.trim().length > 0);
+            const rawHtml = marked.parse(res.text) as string;
+            const cleanHtml = DOMPurify.sanitize(rawHtml);
+            
             return html`
                 <div class="summary-container">
-                    <div class="summary-card">
-                        <h3 class="summary-title">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
-                        </h3>
-                        <div class="summary-desc">
-                            ${paragraphs.map(p => html`<p style="margin: 0 0 8px 0; max-width: 100%; white-space: pre-wrap; word-wrap: break-word;">${p}</p>`)}
-                        </div>
+                    <h3 class="summary-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                        ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                    </h3>
+                    <div class="summary-desc markdown-body">
+                        ${unsafeHTML(cleanHtml)}
                     </div>
                 </div>
             `;
@@ -695,18 +714,12 @@ export const panelStyles = css`
     .summary-container {
         display: flex;
         flex-direction: column;
-        gap: 16px;
-        padding: 0 4px;
-    }
-
-    .summary-card {
-        background: #f4f5f7;
-        border-radius: 6px;
-        padding: 16px;
+        gap: 12px;
+        padding: 0 8px;
     }
 
     .summary-title {
-        margin: 0 0 8px 0;
+        margin: 0;
         font-size: 14px;
         font-weight: 500;
         color: #18191c;
@@ -715,10 +728,65 @@ export const panelStyles = css`
     }
 
     .summary-desc {
-        margin: 0;
+        color: #18191c;
         font-size: 13px;
-        color: #61666d;
         line-height: 1.6;
+    }
+
+    /* Markdown 样式重置，使其融入 Bilibili 风格 */
+    .markdown-body h1, 
+    .markdown-body h2, 
+    .markdown-body h3, 
+    .markdown-body h4 {
+        margin: 12px 0 8px;
+        font-weight: 600;
+        font-size: 14px;
+        color: #18191c;
+    }
+    
+    .markdown-body h1:first-child,
+    .markdown-body h2:first-child,
+    .markdown-body h3:first-child,
+    .markdown-body h4:first-child {
+        margin-top: 0;
+    }
+
+    .markdown-body p {
+        margin: 0 0 12px;
+        line-height: 1.6;
+    }
+
+    .markdown-body p:last-child {
+        margin-bottom: 0;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+        margin: 0 0 12px;
+        padding-left: 20px;
+    }
+
+    .markdown-body li {
+        margin-bottom: 4px;
+    }
+
+    .markdown-body strong {
+        font-weight: 600;
+        color: #18191c;
+    }
+    
+    .markdown-body blockquote {
+        margin: 0 0 12px;
+        padding-left: 12px;
+        border-left: 4px solid #e3e5e7;
+        color: #61666d;
+    }
+    
+    .markdown-body code {
+        font-family: monospace;
+        background-color: #f4f5f7;
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-size: 12px;
     }
 
     .points-title {
