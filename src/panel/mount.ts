@@ -3,8 +3,7 @@ import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
-import { llmSummaryProvider } from "../summary/llm-provider";
-import type { SummaryResult } from "../summary/types";
+import { summarizeStreaming } from "../summary/llm-provider";
 import { getSettings } from "../settings/storage";
 import { copyTranscript, downloadTranscript } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
@@ -50,9 +49,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     let mode: Mode = "ts";
     let uiLanguage: "zh" | "en" = "zh";
     
-    let summaryResult: SummaryResult | null = null;
+    let summaryText: string | null = null;
     let isSummarizing = false;
     let summaryError: string | null = null;
+    let activeAbort: AbortController | null = null;
 
     const generateSummary = () => {
         if (!data.transcript || data.transcript.length === 0) {
@@ -61,25 +61,37 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             return;
         }
 
+        // Cancel any in-flight stream
+        activeAbort?.abort();
+
         isSummarizing = true;
+        summaryText = null;
         summaryError = null;
         renderPanel();
 
-        llmSummaryProvider.summarize({ transcript: data.transcript })
-            .then(res => {
-                summaryResult = res;
-            })
-            .catch(err => {
-                summaryError = err.message || (uiLanguage === "zh" ? "生成摘要时发生未知错误" : "Unknown error occurred during summarization.");
-            })
-            .finally(() => {
-                isSummarizing = false;
+        activeAbort = summarizeStreaming({
+            request: { transcript: data.transcript },
+            onToken: (partialText: string) => {
+                summaryText = partialText;
                 renderPanel();
-            });
+            },
+            onDone: (fullText: string) => {
+                summaryText = fullText;
+                isSummarizing = false;
+                activeAbort = null;
+                renderPanel();
+            },
+            onError: (err: Error) => {
+                summaryError = err.message || (uiLanguage === "zh" ? "生成摘要时发生未知错误" : "Unknown error occurred during summarization.");
+                isSummarizing = false;
+                activeAbort = null;
+                renderPanel();
+            },
+        });
     };
 
     const handleRetrySummary = () => {
-        summaryResult = null;
+        summaryText = null;
         generateSummary();
     };
 
@@ -104,10 +116,11 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             const { body } = await fetchBilibiliSubtitleBody(newUrl);
             data.transcript = normalizeBilibiliTranscript(body);
             data.subtitleUrl = newUrl;
+            console.log("[RC] Subtitle language switched, new first 3 lines:", data.transcript?.slice(0, 3).map(l => l.content));
             
             // 如果处于 summary 模式，重置当前总结（因为语言/内容已切换）
             if (mode === "summary") {
-                summaryResult = null;
+                summaryText = null;
                 isSummarizing = false;
                 summaryError = null;
                 generateSummary();
@@ -120,10 +133,9 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     const renderPanel = (): void => {
-        // 将 openExtensionOptionsPage 作为回调传入
         render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
             isSummarizing,
-            result: summaryResult,
+            text: summaryText,
             error: summaryError,
             onRetry: handleRetrySummary
         }, handleCopy, handleDownload, handleSubtitleLanguageChange), shadow);
@@ -131,7 +143,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     const setMode = (nextMode: Mode): void => {
         mode = nextMode;
-        if (mode === "summary" && !summaryResult && !isSummarizing && !summaryError) {
+        if (mode === "summary" && !summaryText && !isSummarizing && !summaryError) {
             generateSummary();
         } else {
             renderPanel();

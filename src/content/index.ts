@@ -46,6 +46,7 @@ function setupPersistence() {
         const host = document.getElementById(ROOT_ID);
         // If host was removed from anchor
         if (!host || !anchor.contains(host)) {
+            console.warn("[RC] Persistence observer: host missing, re-mounting!", { hasData: !!currentData });
             if (currentData) {
                 fillData(currentData);
             } else {

@@ -3,7 +3,6 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { TranscriptLine } from "../transcript/model";
-import type { SummaryResult } from "../summary/types";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
@@ -26,7 +25,7 @@ export function panelTemplate(
     onLangClick?: () => void,
     summaryState?: {
         isSummarizing: boolean;
-        result: SummaryResult | null;
+        text: string | null;
         error: string | null;
         onRetry: () => void;
     },
@@ -217,6 +216,30 @@ export function panelTemplate(
     };
 
     const renderSummaryView = () => {
+        // Show streaming content: while summarizing AND we have partial text, show it
+        if (summaryState?.isSummarizing && summaryState?.text) {
+            const rawHtml = marked.parse(summaryState.text) as string;
+            const cleanHtml = DOMPurify.sanitize(rawHtml);
+            return html`
+                <div class="summary-container">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <h3 class="summary-title" style="margin: 0;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                        </h3>
+                        <span class="streaming-indicator">
+                            <span class="streaming-dot"></span>
+                            ${currentLang === "zh" ? "生成中" : "Generating"}
+                        </span>
+                    </div>
+                    <div class="summary-desc markdown-body">
+                        ${unsafeHTML(cleanHtml)}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Pure loading state (no text yet)
         if (summaryState?.isSummarizing) {
             return html`
                 <div class="summary-container loading-state">
@@ -242,17 +265,23 @@ export function panelTemplate(
             `;
         }
 
-        const res = summaryState?.result;
-        if (res && res.text) {
-            const rawHtml = marked.parse(res.text) as string;
+        const text = summaryState?.text;
+        if (text) {
+            const rawHtml = marked.parse(text) as string;
             const cleanHtml = DOMPurify.sanitize(rawHtml);
             
             return html`
                 <div class="summary-container">
-                    <h3 class="summary-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                        ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
-                    </h3>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <h3 class="summary-title" style="margin: 0;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                        </h3>
+                        <button class="regenerate-btn" @click=${summaryState?.onRetry} title="${currentLang === 'zh' ? '基于当前字幕重新生成' : 'Regenerate with current captions'}">
+                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                            ${currentLang === "zh" ? "重新生成" : "Regenerate"}
+                        </button>
+                    </div>
                     <div class="summary-desc markdown-body">
                         ${unsafeHTML(cleanHtml)}
                     </div>
@@ -260,7 +289,7 @@ export function panelTemplate(
             `;
         }
 
-        // 默认返回空状态，如果没有可用的数据和状态
+        // 默认返回空状态
         return emptyState();
     };
 
@@ -553,6 +582,8 @@ export const panelStyles = css`
         padding: 12px 12px 16px;
         overflow-y: auto;
         flex: 1;
+        display: flex;
+        flex-direction: column;
     }
 
     .content::-webkit-scrollbar {
@@ -820,10 +851,11 @@ export const panelStyles = css`
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 40px 16px;
+        padding: 0 16px;
         color: #9499a0;
         font-size: 13px;
-        min-height: 200px;
+        flex: 1;
+        min-height: 260px;
     }
 
     .bili-loading {
@@ -867,8 +899,49 @@ export const panelStyles = css`
         cursor: pointer;
         transition: background 0.2s;
     }
+    
+    .regenerate-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        color: #9499a0;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .regenerate-btn:hover {
+        background: #f4f5f7;
+        color: #00aeec;
+    }
 
     .retry-btn:hover {
         background: #00bdfa;
     }
-`;
+
+    /* ======= 流式生成指示器 ======= */
+    .streaming-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #00aeec;
+        user-select: none;
+    }
+
+    .streaming-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #00aeec;
+        animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
+    }
+`;
