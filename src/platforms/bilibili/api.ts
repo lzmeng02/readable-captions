@@ -1,7 +1,13 @@
+export type BilibiliSubtitleItem = {
+    lan_doc: string;
+    subtitle_url: string;
+};
+
 type BilibiliViewInfo = {
     aid?: number;
     cid?: number;
     subtitleUrl?: string;
+    availableSubtitles?: BilibiliSubtitleItem[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -59,32 +65,19 @@ async function fetchJson(url: string): Promise<unknown> {
     return res.json();
 }
 
-function getAISubtitleUrl(subtitles: unknown[]): string | null {
-    const getSubtitleUrl = (item: unknown): string | null => {
+function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
+    const results: BilibiliSubtitleItem[] = [];
+    for (const item of subtitles) {
         const subtitle = asRecord(item);
-        if (!subtitle) return null;
-
-        return readString(subtitle, "subtitle_url") ?? null;
-    };
-
-    const isAiUrl = (url: string): boolean =>
-        url.includes("aisubtitle.hdslb.com") || url.includes("/bfs/ai_subtitle/");
-
-    for (const subtitle of subtitles) {
-        const subtitleUrl = getSubtitleUrl(subtitle);
-        if (subtitleUrl && isAiUrl(subtitleUrl)) {
-            return subtitleUrl;
+        if (subtitle) {
+            const subtitle_url = readString(subtitle, "subtitle_url");
+            const lan_doc = readString(subtitle, "lan_doc") || "未知语言";
+            if (subtitle_url) {
+                results.push({ lan_doc, subtitle_url });
+            }
         }
     }
-
-    for (const subtitle of subtitles) {
-        const subtitleUrl = getSubtitleUrl(subtitle);
-        if (subtitleUrl) {
-            return subtitleUrl;
-        }
-    }
-
-    return null;
+    return results;
 }
 
 export function getBiliVideoId(url: string): string | null {
@@ -117,13 +110,13 @@ export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliV
 
     const subtitle = getNestedRecord(data, "subtitle") ?? {};
     const subtitleList = getArray(subtitle, "list");
-    const firstSubtitle = asRecord(subtitleList[0]) ?? {};
-    const subtitleUrl = readString(firstSubtitle, "subtitle_url");
+    const availableSubtitles = getSubtitleItems(subtitleList);
+    const subtitleUrl = availableSubtitles.length > 0 ? availableSubtitles[0].subtitle_url : undefined;
 
-    return { aid, cid, subtitleUrl };
+    return { aid, cid, subtitleUrl, availableSubtitles };
 }
 
-export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number): Promise<string | null> {
+export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number): Promise<BilibiliSubtitleItem[]> {
     const wbi = new URL("https://api.bilibili.com/x/player/wbi/v2");
     wbi.searchParams.set("aid", String(aid));
     wbi.searchParams.set("cid", String(cid));
@@ -135,7 +128,7 @@ export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number): Prom
     const subtitle = getNestedRecord(data, "subtitle") ?? {};
     const subtitles = getArray(subtitle, "subtitles");
 
-    return getAISubtitleUrl(subtitles);
+    return getSubtitleItems(subtitles);
 }
 
 export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string): Promise<{

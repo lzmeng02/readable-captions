@@ -4,11 +4,27 @@
   "version": "0.1.0",
   "description": "Turn captions into readable paragraphs.",
   "permissions": ["storage"],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["options.html"],
+      "matches": ["https://www.bilibili.com/*"]
+    }
+  ],
   "host_permissions": [
     "https://www.bilibili.com/*",
     "https://api.bilibili.com/*",
     "https://aisubtitle.hdslb.com/*",
-    "https://*.hdslb.com/*"
+    "https://*.hdslb.com/*",
+    "https://api.openai.com/*",
+    "https://api.deepseek.com/*"
   ],
   "content_scripts": [
     {

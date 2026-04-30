@@ -1,20 +1,80 @@
 import { css, html } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import type { TranscriptLine } from "../transcript/model";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
-// 引入全局状态来记录是否收起面板
+export type PanelUiOptions = {
+    summaryEnabled: boolean;
+};
+
+// 引入全局状态来记录是否收起面板和菜单状态
 let isCollapsed = false;
+let isMenuOpen = false;
 
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
-    data: { transcript: TranscriptLine[] | null; source: string },
+    data: {
+        transcript: TranscriptLine[] | null;
+        source: string;
+        availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
+        subtitleUrl?: string;
+        isLoading?: boolean;
+    },
+    onSettingsClick: () => void,
+    currentLang: "zh" | "en" = "zh",
+    onLangClick?: () => void,
+    summaryState?: {
+        isSummarizing: boolean;
+        text: string | null;
+        error: string | null;
+        onRetry: () => void;
+    },
+    onCopy?: () => void,
+    onDownload?: () => void,
+    onSubtitleLanguageChange?: (url: string) => void,
+    uiOptions: PanelUiOptions = { summaryEnabled: true },
 ) {
-    // 切换收起/展开状态，并触发重渲染
+    const summaryEnabled = uiOptions.summaryEnabled;
+
+    // 切换收起/展开状态
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
-        setMode(mode); // 巧妙利用现有的 setMode 触发 Lit 重新渲染
+        setMode(mode);
+    };
+
+    // 切换更多菜单状态
+    const toggleMenu = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = !isMenuOpen;
+        setMode(mode);
+    };
+
+    // 点击遮罩关闭菜单
+    const closeMenu = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = false;
+        setMode(mode);
+    };
+
+    // 处理点击设置选项
+    const handleSettingsClick = (e: Event) => {
+        e.stopPropagation();
+        isMenuOpen = false; // 关闭菜单
+        setMode(mode);      // 触发重渲染
+        onSettingsClick();  // 调用外部传入的打开设置页方法
+    };
+
+    // 处理点击语言选项
+    const handleLangClick = (e: Event) => {
+        e.stopPropagation();
+        // 语言切换不需要关闭菜单，所以只调外部回调，外部会触发重渲染
+        if (onLangClick) {
+            onLangClick();
+        }
     };
 
     const tab = (id: Mode, label: string) => {
@@ -39,40 +99,72 @@ export function panelTemplate(
         const v = document.querySelector("video") as HTMLVideoElement | null;
         if (!v) return;
         v.currentTime = sec;
-        v.play().catch(() => {});
+        v.play().catch(() => { });
     };
 
-    // 空状态组件 (带图标，更原生)
-    const emptyState = () => html`
-        <div class="empty-state">
-            <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 8H38C39.1046 8 40 8.89543 40 10V38C40 39.1046 39.1046 40 38 40H10C8.89543 40 8 39.1046 8 38V10C8 8.89543 8.89543 8 10 8Z" fill="#F4F5F7" stroke="#E3E5E7" stroke-width="2"/>
-                <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
-                <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <p>当前视频没有可用字幕</p>
-        </div>
-    `;
+    // 空状态 / 加载状态组件
+    const emptyState = () => {
+        if (data.isLoading) {
+            return html`
+                <div class="empty-state">
+                    <div class="bili-loading">
+                        <svg class="circular" viewBox="25 25 50 50">
+                            <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
+                        </svg>
+                        <p>${currentLang === "zh" ? "正在加载字幕..." : "Loading captions..."}</p>
+                    </div>
+                </div>
+            `;
+        }
 
-    // 渲染元数据和语言选择器 (抽离出来以便复用)
+        return html`
+            <div class="empty-state">
+                <svg viewBox="0 0 48 48" width="64" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M10 8H38C39.1046 8 40 8.89543 40 10V38C40 39.1046 39.1046 40 38 40H10C8.89543 40 8 39.1046 8 38V10C8 8.89543 8.89543 8 10 8Z" fill="#F4F5F7" stroke="#E3E5E7" stroke-width="2"/>
+                    <path d="M16 20H32" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M16 28H26" stroke="#C9CCD0" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <p>${currentLang === "zh" ? "当前视频没有可用字幕" : "No captions available for this video"}</p>
+            </div>
+        `;
+    };
+
+    // 渲染元数据和语言选择器
     const renderMetaBar = () => {
         const t = data.transcript;
         const count = t ? t.length : 0;
-        const sourceLabel =
-            data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
+
+        let sourceLabel = "未知";
+        if (currentLang === "zh") {
+            sourceLabel = data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
+        } else {
+            sourceLabel = data.source === "human_view" ? "Human CC" : data.source === "ai_wbi" ? "AI Auto" : "Unknown";
+        }
+
+        const hasSubtitles = data.availableSubtitles && data.availableSubtitles.length > 0;
 
         return html`
             <div class="meta-bar">
                 <div class="meta-info">
-                    来源：${sourceLabel} <span class="meta-divider">|</span> 共 ${count} 条
+                    ${currentLang === "zh" ? "来源：" : "Source: "}${sourceLabel} <span class="meta-divider">|</span> ${currentLang === "zh" ? "共" : "Total"} ${count} ${currentLang === "zh" ? "条" : "lines"}
                 </div>
                 
-                ${data.source === "ai_wbi" ? html`
+                ${hasSubtitles ? html`
                     <div class="lang-selector">
-                        <select class="lang-select" title="切换语言">
-                            <option value="zh">中文 (AI)</option>
-                            <option value="en">English (AI)</option>
-                            <option value="ja">日本語 (AI)</option>
+                        <select class="lang-select" 
+                            title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}"
+                            @change=${(e: Event) => {
+                    const target = e.target as HTMLSelectElement;
+                    if (onSubtitleLanguageChange) {
+                        onSubtitleLanguageChange(target.value);
+                    }
+                }}
+                        >
+                            ${data.availableSubtitles!.map(sub => html`
+                                <option value="${sub.subtitle_url}" ?selected=${sub.subtitle_url === data.subtitleUrl}>
+                                    ${sub.lan_doc}
+                                </option>
+                            `)}
                         </select>
                         <svg class="lang-arrow" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="6 9 12 15 18 9"></polyline>
@@ -83,7 +175,6 @@ export function panelTemplate(
         `;
     };
 
-    // 视图 1：时间轴/原字幕 (基础列表视图)
     const renderTranscriptList = () => {
         const t = data.transcript;
         if (!t || t.length === 0) return emptyState();
@@ -92,18 +183,17 @@ export function panelTemplate(
             ${renderMetaBar()}
             <div class="list">
                 ${t.map(
-                    (l) => html`
+            (l) => html`
                         <button class="line" @click=${() => jump(l.from)}>
                             <span class="t">${fmt(l.from)}</span>
                             <span class="c">${l.content}</span>
                         </button>
                     `,
-                )}
+        )}
             </div>
         `;
     };
 
-    // 视图 2：可读段落 (模拟将零碎句子聚合成段落)
     const renderReadView = () => {
         const t = data.transcript;
         if (!t || t.length === 0) return emptyState();
@@ -117,9 +207,9 @@ export function panelTemplate(
             ${renderMetaBar()}
             <div class="article">
                 ${paragraphs.map((para) => {
-                    const firstLine = para[0];
-                    const text = para.map((l) => l.content).join("，"); 
-                    return html`
+            const firstLine = para[0];
+            const text = para.map((l) => l.content).join("，");
+            return html`
                         <p class="paragraph">
                             <span class="inline-t" @click=${() => jump(firstLine.from)}>
                                 ${fmt(firstLine.from)}
@@ -127,40 +217,87 @@ export function panelTemplate(
                             ${text}。
                         </p>
                     `;
-                })}
+        })}
             </div>
         `;
     };
 
-    // 视图 3：摘要 (AI 结构化总结占位设计)
     const renderSummaryView = () => {
-        return html`
-            <div class="summary-container">
-                <div class="summary-card">
-                    <h3 class="summary-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                        AI 内容摘要
-                    </h3>
-                    <p class="summary-desc">这是 AI 生成的视频内容结构化总结，目前为占位设计。后续可接入大模型总结的数据。</p>
+        // Show streaming content: while summarizing AND we have partial text, show it
+        if (summaryState?.isSummarizing && summaryState?.text) {
+            const rawHtml = marked.parse(summaryState.text) as string;
+            const cleanHtml = DOMPurify.sanitize(rawHtml);
+            return html`
+                <div class="summary-container">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <h3 class="summary-title" style="margin: 0;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                        </h3>
+                        <span class="streaming-indicator">
+                            <span class="streaming-dot"></span>
+                            ${currentLang === "zh" ? "生成中" : "Generating"}
+                        </span>
+                    </div>
+                    <div class="summary-desc markdown-body">
+                        ${unsafeHTML(cleanHtml)}
+                    </div>
                 </div>
-                
-                <div class="summary-points">
-                    <h4 class="points-title">章节看点</h4>
-                    <button class="line" @click=${() => jump(0)}>
-                        <span class="t">00:00</span>
-                        <div class="c">伊朗革命卫队总司令相关发言与背景介绍</div>
-                    </button>
-                    <button class="line" @click=${() => jump(10)}>
-                        <span class="t">00:10</span>
-                        <div class="c">2026年特朗普第二次动用军事手段的深层分析</div>
-                    </button>
-                    <button class="line" @click=${() => jump(18)}>
-                        <span class="t">00:18</span>
-                        <div class="c">解读该地区强国及石油生产大国在国际局势中的地位</div>
+            `;
+        }
+
+        // Pure loading state (no text yet)
+        if (summaryState?.isSummarizing) {
+            return html`
+                <div class="summary-container loading-state">
+                    <div class="bili-loading">
+                        <svg class="circular" viewBox="25 25 50 50">
+                            <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
+                        </svg>
+                        <p>${currentLang === "zh" ? "AI 总结生成中..." : "AI summarizing..."}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (summaryState?.error) {
+            return html`
+                <div class="summary-container error-state">
+                    <svg viewBox="0 0 24 24" width="32" height="32" stroke="#ff6666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <p style="text-align: center; margin: 0 0 16px 0; color: #18191c;">${summaryState.error}</p>
+                    <button class="retry-btn" @click=${summaryState.onRetry}>
+                        ${currentLang === "zh" ? "重试" : "Retry"}
                     </button>
                 </div>
-            </div>
-        `;
+            `;
+        }
+
+        const text = summaryState?.text;
+        if (text) {
+            const rawHtml = marked.parse(text) as string;
+            const cleanHtml = DOMPurify.sanitize(rawHtml);
+
+            return html`
+                <div class="summary-container">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <h3 class="summary-title" style="margin: 0;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                        </h3>
+                        <button class="regenerate-btn" @click=${summaryState?.onRetry} title="${currentLang === 'zh' ? '基于当前字幕重新生成' : 'Regenerate with current captions'}">
+                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                            ${currentLang === "zh" ? "重新生成" : "Regenerate"}
+                        </button>
+                    </div>
+                    <div class="summary-desc markdown-body">
+                        ${unsafeHTML(cleanHtml)}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 默认返回空状态
+        return emptyState();
     };
 
     const content = () => {
@@ -169,7 +306,7 @@ export function panelTemplate(
             case "timeline":
             case "cc":
             case "ts": return renderTranscriptList();
-            case "summary": return renderSummaryView();
+            case "summary": return summaryEnabled ? renderSummaryView() : renderReadView();
             default: return renderTranscriptList();
         }
     };
@@ -177,31 +314,47 @@ export function panelTemplate(
     return html`
         <div class="panel ${isCollapsed ? 'collapsed' : ''}">
             <header class="header">
-                <!-- 点击标题区域即可收起/展开 -->
-                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? "点击展开面板" : "点击收起面板"}>
-                    <span class="title">可读字幕</span>
-                    <span class="sub-title">Readable Captions</span>
+                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? (currentLang === "zh" ? "点击展开面板" : "Click to expand") : (currentLang === "zh" ? "点击收起面板" : "Click to collapse")}>
+                    <span class="title">${currentLang === "zh" ? "可读字幕" : "Readable Captions"}</span>
+                    <span class="sub-title">${currentLang === "zh" ? "Readable Captions" : ""}</span>
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" title="下载">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '下载' : 'Download'}" @click=${onDownload}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" title="复制">
+                    <button class="icon-btn" title="${currentLang === 'zh' ? '复制' : 'Copy'}" @click=${onCopy}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
-                    <button class="icon-btn" title="更多">
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                    </button>
+                    
+                    <div class="more-actions-wrapper">
+                        <button class="icon-btn ${isMenuOpen ? 'active' : ''}" title="${currentLang === 'zh' ? '更多' : 'More'}" @click=${toggleMenu}>
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                        </button>
+                        
+                        ${isMenuOpen ? html`
+                            <div class="menu-overlay" @click=${closeMenu}></div>
+                            <div class="overflow-menu">
+                                <button class="overflow-item" @click=${handleSettingsClick}>
+                                    <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                                    <span class="overflow-item-label">${currentLang === "zh" ? "设置" : "Settings"}</span>
+                                </button>
+                                <button class="overflow-item" @click=${handleLangClick}>
+                                    <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                    <span class="overflow-item-label">${currentLang === "zh" ? "语言：中文" : "Lang: English"}</span>
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
                 </div>
             </header>
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
-                    ${tab("read", "可读")}
-                    ${tab("summary", "摘要")}
-                    ${tab("ts", "原转写")}
-                    ${tab("cc", "原字幕")}
+                    ${tab("read", currentLang === "zh" ? "可读" : "Read")}
+                    ${summaryEnabled ? tab("summary", currentLang === "zh" ? "摘要" : "Summary") : ""}
+                    ${tab("ts", currentLang === "zh" ? "原转写" : "Transcript")}
+                    ${tab("cc", currentLang === "zh" ? "原字幕" : "CC")}
                 </nav>
 
                 <main class="content">${content()}</main>
@@ -213,7 +366,6 @@ export function panelTemplate(
 export const panelStyles = css`
     :host {
         all: initial;
-        /* 使用B站标准字体栈 */
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
         display: block;
         box-sizing: border-box;
@@ -223,7 +375,6 @@ export const panelStyles = css`
         box-sizing: border-box;
     }
 
-    /* 修复所有 button 的字体继承问题 */
     button {
         font-family: inherit;
     }
@@ -233,24 +384,23 @@ export const panelStyles = css`
         max-height: 85vh; 
         display: flex;
         flex-direction: column;
-        border-radius: 6px; /* B站侧边栏通常是较小的圆角 */
+        border-radius: 6px; 
         background: #ffffff;
-        border: 1px solid #e3e5e7; /* B站标准的描边颜色 */
-        overflow: hidden;
-        color: #18191c; /* B站正文标准色 */
+        border: 1px solid #e3e5e7; 
+        overflow: hidden; 
+        color: #18191c; 
     }
 
     .panel.collapsed {
         height: auto;
     }
 
-    /* 顶部标题栏 */
     .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 0 16px;
-        height: 46px; /* 固定高度更严谨 */
+        height: 46px; 
         flex-shrink: 0;
     }
 
@@ -275,10 +425,11 @@ export const panelStyles = css`
         font-weight: 400;
     }
 
-    /* 操作按钮 */
     .actions {
         display: flex;
+        align-items: center;
         gap: 4px;
+        position: relative;
     }
 
     .icon-btn {
@@ -299,23 +450,113 @@ export const panelStyles = css`
         color: #18191c;
     }
 
-    /* B站原生风格 Tab */
+    .icon-btn.active {
+        background: #e3e5e7; 
+        color: #18191c;
+    }
+
+    /* ======= 新设计的下拉菜单 ======= */
+    .more-actions-wrapper {
+        position: relative;
+    }
+
+    .menu-overlay {
+        position: fixed;
+        top: 0; 
+        left: 0; 
+        width: 100vw; 
+        height: 100vh;
+        z-index: 90;
+        cursor: default;
+    }
+
+    .overflow-menu {
+        position: absolute;
+        top: calc(100% + 6px); 
+        right: 0;
+        width: 132px;
+        padding: 6px;
+        border: 1px solid #e3e5e7; 
+        border-radius: 8px; 
+        background: #ffffff;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0, 0, 0, 0.02);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 2px; 
+        transform-origin: top right;
+        animation: menuFadeIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    @keyframes menuFadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.95) translateY(-4px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    .overflow-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        border: none;
+        border-radius: 6px; 
+        background: transparent;
+        color: #18191c; 
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1.4;
+        min-height: 34px;
+        padding: 6px 10px;
+        text-align: left;
+        transition: background-color 0.2s, color 0.2s;
+    }
+
+    .overflow-item-icon {
+        flex: 0 0 auto;
+        color: #9499a0;
+        transition: color 0.2s;
+    }
+
+    .overflow-item-label {
+        flex: 1 1 auto;
+        white-space: nowrap;
+    }
+
+    .overflow-item:hover,
+    .overflow-item:focus-visible {
+        background: #f4f5f7;
+        color: #00aeec;
+        outline: none;
+    }
+
+    .overflow-item:hover .overflow-item-icon,
+    .overflow-item:focus-visible .overflow-item-icon {
+        color: #00aeec;
+    }
+
+    /* ======= B站原生风格 Tab ======= */
     .bili-tabs {
         display: flex;
-        padding: 0 8px; /* 稍微缩减一点外边距，让均分看起来更饱满 */
+        padding: 0 8px; 
         border-bottom: 1px solid #e3e5e7;
         flex-shrink: 0;
     }
 
     .bili-tabs .tab {
-        flex: 1; /* 关键修改：让每个按钮等比例占用所有空间，实现均分 */
-        text-align: center; /* 确保文字在均分的块里居中 */
+        flex: 1; 
+        text-align: center; 
         background: transparent;
         border: none;
         padding: 10px 0;
         font-size: 14px;
-        font-family: inherit; /* 强制继承字体，避免由于默认字体差异导致字号不一 */
-        white-space: nowrap;  /* 防止文字换行压缩 */
+        font-family: inherit; 
+        white-space: nowrap; 
         color: #61666d;
         cursor: pointer;
         position: relative;
@@ -334,23 +575,24 @@ export const panelStyles = css`
     .bili-tabs .tab.active::after {
         content: '';
         position: absolute;
-        bottom: -1px; /* 盖住父元素的下边框 */
+        bottom: -1px; 
         left: 50%;
         transform: translateX(-50%);
-        width: 24px; /* 关键修改：均分后按钮变宽，改为固定的短横线更符合B站设计风格 */
+        width: 24px; 
         height: 2px;
         background: #00aeec;
         border-radius: 2px;
     }
 
-    /* 内容区域 */
+    /* ======= 内容区域 ======= */
     .content {
         padding: 12px 12px 16px;
         overflow-y: auto;
         flex: 1;
+        display: flex;
+        flex-direction: column;
     }
 
-    /* 细长优雅的滚动条 */
     .content::-webkit-scrollbar {
         width: 6px;
     }
@@ -383,7 +625,6 @@ export const panelStyles = css`
         color: #e3e5e7;
     }
 
-    /* 原生语言选择器 */
     .lang-selector {
         position: relative;
         display: flex;
@@ -408,6 +649,14 @@ export const panelStyles = css`
     .lang-select:hover {
         border-color: #00aeec;
         color: #00aeec;
+    }
+    
+    .lang-select:focus {
+        border-color: #e3e5e7;
+    }
+
+    .lang-select:focus:hover {
+        border-color: #00aeec;
     }
 
     .lang-arrow {
@@ -437,7 +686,7 @@ export const panelStyles = css`
         cursor: pointer;
         display: flex;
         gap: 12px; 
-        align-items: baseline; /* 关键修复：使用基线对齐，完美解决大小字体的视觉居中问题 */
+        align-items: baseline; 
         transition: background-color 0.2s;
     }
     .line:hover {
@@ -450,12 +699,12 @@ export const panelStyles = css`
         color: #9499a0;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
-        margin-top: 0; /* 移除之前为了顶部对齐而加的强行偏移 */
+        margin-top: 0; 
         transition: color 0.2s;
     }
     
     .line:hover .t {
-        color: #00aeec; /* Hover 时时间戳亮起 */
+        color: #00aeec; 
     }
 
     .c {
@@ -475,8 +724,8 @@ export const panelStyles = css`
     
     .paragraph {
         margin: 0;
-        font-size: 13px;     /* 统一字号：将 14px 改为 13px */ 
-        line-height: 1.6;    /* 统一行高：将 1.8 改为 1.6 */
+        font-size: 13px;  
+        line-height: 1.6; 
         color: #18191c;
         text-align: justify;
     }
@@ -503,18 +752,12 @@ export const panelStyles = css`
     .summary-container {
         display: flex;
         flex-direction: column;
-        gap: 16px;
-        padding: 0 4px;
-    }
-
-    .summary-card {
-        background: #f4f5f7;
-        border-radius: 6px;
-        padding: 16px;
+        gap: 12px;
+        padding: 0 8px;
     }
 
     .summary-title {
-        margin: 0 0 8px 0;
+        margin: 0;
         font-size: 14px;
         font-weight: 500;
         color: #18191c;
@@ -523,10 +766,65 @@ export const panelStyles = css`
     }
 
     .summary-desc {
-        margin: 0;
+        color: #18191c;
         font-size: 13px;
-        color: #61666d;
         line-height: 1.6;
+    }
+
+    /* Markdown 样式重置，使其融入 Bilibili 风格 */
+    .markdown-body h1, 
+    .markdown-body h2, 
+    .markdown-body h3, 
+    .markdown-body h4 {
+        margin: 12px 0 8px;
+        font-weight: 600;
+        font-size: 14px;
+        color: #18191c;
+    }
+    
+    .markdown-body h1:first-child,
+    .markdown-body h2:first-child,
+    .markdown-body h3:first-child,
+    .markdown-body h4:first-child {
+        margin-top: 0;
+    }
+
+    .markdown-body p {
+        margin: 0 0 12px;
+        line-height: 1.6;
+    }
+
+    .markdown-body p:last-child {
+        margin-bottom: 0;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+        margin: 0 0 12px;
+        padding-left: 20px;
+    }
+
+    .markdown-body li {
+        margin-bottom: 4px;
+    }
+
+    .markdown-body strong {
+        font-weight: 600;
+        color: #18191c;
+    }
+    
+    .markdown-body blockquote {
+        margin: 0 0 12px;
+        padding-left: 12px;
+        border-left: 4px solid #e3e5e7;
+        color: #61666d;
+    }
+    
+    .markdown-body code {
+        font-family: monospace;
+        background-color: #f4f5f7;
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-size: 12px;
     }
 
     .points-title {
@@ -552,5 +850,105 @@ export const panelStyles = css`
         font-size: 13px;
         padding: 60px 0;
         gap: 12px;
+    }
+
+    /* ======= 摘要加载/报错状态 ======= */
+    .loading-state, .error-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 0 16px;
+        color: #9499a0;
+        font-size: 13px;
+        flex: 1;
+        min-height: 260px;
+    }
+
+    .bili-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .bili-loading .circular {
+        width: 36px;
+        height: 36px;
+        animation: rotate 2s linear infinite;
+    }
+
+    .bili-loading .path {
+        stroke: #00aeec;
+        stroke-dasharray: 1, 200;
+        stroke-dashoffset: 0;
+        animation: dash 1.5s ease-in-out infinite;
+        stroke-linecap: round;
+    }
+
+    @keyframes rotate {
+        100% { transform: rotate(360deg); }
+    }
+
+    @keyframes dash {
+        0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+        50% { stroke-dasharray: 89, 200; stroke-dashoffset: -35px; }
+        100% { stroke-dasharray: 89, 200; stroke-dashoffset: -124px; }
+    }
+
+    .retry-btn {
+        background: #00aeec;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 16px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .regenerate-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        color: #9499a0;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .regenerate-btn:hover {
+        background: #f4f5f7;
+        color: #00aeec;
+    }
+
+    .retry-btn:hover {
+        background: #00bdfa;
+    }
+
+    /* ======= 流式生成指示器 ======= */
+    .streaming-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #00aeec;
+        user-select: none;
+    }
+
+    .streaming-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #00aeec;
+        animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1.2); }
     }
 `;

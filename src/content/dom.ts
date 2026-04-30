@@ -19,7 +19,7 @@ export function waitForElm(anchorID: string): Promise<Element> {
     });
 }
 
-export function ensureHostBefore(anchor: Element): HTMLElement {
+export function ensureHostInside(anchor: Element): HTMLElement {
     let host = document.getElementById(ROOT_ID);
     if (!host) {
         host = document.createElement("section");
@@ -29,7 +29,7 @@ export function ensureHostBefore(anchor: Element): HTMLElement {
         host.style.marginBottom = "12px";
     }
 
-    anchor.insertAdjacentElement("beforebegin", host);
+    anchor.prepend(host);
 
     return host;
 }
