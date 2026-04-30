@@ -168,6 +168,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     document.addEventListener("pointerdown", handlePointerDown, true);
 
     managedHost[cleanupKey] = (): void => {
+        activeAbort?.abort();
+        activeAbort = null;
         document.removeEventListener("pointerdown", handlePointerDown, true);
     };
 
