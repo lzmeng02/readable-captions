@@ -48,7 +48,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     let mode: Mode = "ts";
     let uiLanguage: "zh" | "en" = "zh";
-    
+
     let summaryText: string | null = null;
     let isSummarizing = false;
     let summaryError: string | null = null;
@@ -111,13 +111,13 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
         if (!newUrl || newUrl === data.subtitleUrl) return;
-        
+
         try {
             const { body } = await fetchBilibiliSubtitleBody(newUrl);
             data.transcript = normalizeBilibiliTranscript(body);
             data.subtitleUrl = newUrl;
             console.log("[RC] Subtitle language switched, new first 3 lines:", data.transcript?.slice(0, 3).map(l => l.content));
-            
+
             // 如果处于 summary 模式，重置当前总结（因为语言/内容已切换）
             if (mode === "summary") {
                 summaryText = null;
@@ -161,7 +161,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         const isInside = path.some((node: any) => node?.classList?.contains('more-actions-wrapper'));
         if (!isInside) {
             // 通过触发 setMode 重新渲染来使得内部的 isMenuOpen 状态重置 (可以在 panel-view 暴露一个 close 方法，或者简单的重新渲染)
-            renderPanel(); 
+            renderPanel();
         }
     };
 

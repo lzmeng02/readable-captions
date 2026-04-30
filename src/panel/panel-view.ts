@@ -13,8 +13,8 @@ let isMenuOpen = false;
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode) => void,
-    data: { 
-        transcript: TranscriptLine[] | null; 
+    data: {
+        transcript: TranscriptLine[] | null;
         source: string;
         availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
         subtitleUrl?: string;
@@ -36,7 +36,7 @@ export function panelTemplate(
     // 切换收起/展开状态
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
-        setMode(mode); 
+        setMode(mode);
     };
 
     // 切换更多菜单状态
@@ -92,7 +92,7 @@ export function panelTemplate(
         const v = document.querySelector("video") as HTMLVideoElement | null;
         if (!v) return;
         v.currentTime = sec;
-        v.play().catch(() => {});
+        v.play().catch(() => { });
     };
 
     // 空状态 / 加载状态组件
@@ -126,7 +126,7 @@ export function panelTemplate(
     const renderMetaBar = () => {
         const t = data.transcript;
         const count = t ? t.length : 0;
-        
+
         let sourceLabel = "未知";
         if (currentLang === "zh") {
             sourceLabel = data.source === "human_view" ? "人工字幕" : data.source === "ai_wbi" ? "AI 字幕" : "未知";
@@ -147,11 +147,11 @@ export function panelTemplate(
                         <select class="lang-select" 
                             title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}"
                             @change=${(e: Event) => {
-                                const target = e.target as HTMLSelectElement;
-                                if (onSubtitleLanguageChange) {
-                                    onSubtitleLanguageChange(target.value);
-                                }
-                            }}
+                    const target = e.target as HTMLSelectElement;
+                    if (onSubtitleLanguageChange) {
+                        onSubtitleLanguageChange(target.value);
+                    }
+                }}
                         >
                             ${data.availableSubtitles!.map(sub => html`
                                 <option value="${sub.subtitle_url}" ?selected=${sub.subtitle_url === data.subtitleUrl}>
@@ -176,13 +176,13 @@ export function panelTemplate(
             ${renderMetaBar()}
             <div class="list">
                 ${t.map(
-                    (l) => html`
+            (l) => html`
                         <button class="line" @click=${() => jump(l.from)}>
                             <span class="t">${fmt(l.from)}</span>
                             <span class="c">${l.content}</span>
                         </button>
                     `,
-                )}
+        )}
             </div>
         `;
     };
@@ -200,9 +200,9 @@ export function panelTemplate(
             ${renderMetaBar()}
             <div class="article">
                 ${paragraphs.map((para) => {
-                    const firstLine = para[0];
-                    const text = para.map((l) => l.content).join("，"); 
-                    return html`
+            const firstLine = para[0];
+            const text = para.map((l) => l.content).join("，");
+            return html`
                         <p class="paragraph">
                             <span class="inline-t" @click=${() => jump(firstLine.from)}>
                                 ${fmt(firstLine.from)}
@@ -210,7 +210,7 @@ export function panelTemplate(
                             ${text}。
                         </p>
                     `;
-                })}
+        })}
             </div>
         `;
     };
@@ -269,7 +269,7 @@ export function panelTemplate(
         if (text) {
             const rawHtml = marked.parse(text) as string;
             const cleanHtml = DOMPurify.sanitize(rawHtml);
-            
+
             return html`
                 <div class="summary-container">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -944,4 +944,4 @@ export const panelStyles = css`
         0%, 100% { opacity: 0.3; transform: scale(0.8); }
         50% { opacity: 1; transform: scale(1.2); }
     }
-`;
+`;
