@@ -6,6 +6,10 @@ import type { TranscriptLine } from "../transcript/model";
 
 export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
 
+export type PanelUiOptions = {
+    summaryEnabled: boolean;
+};
+
 // 引入全局状态来记录是否收起面板和菜单状态
 let isCollapsed = false;
 let isMenuOpen = false;
@@ -31,8 +35,11 @@ export function panelTemplate(
     },
     onCopy?: () => void,
     onDownload?: () => void,
-    onSubtitleLanguageChange?: (url: string) => void
+    onSubtitleLanguageChange?: (url: string) => void,
+    uiOptions: PanelUiOptions = { summaryEnabled: true },
 ) {
+    const summaryEnabled = uiOptions.summaryEnabled;
+
     // 切换收起/展开状态
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
@@ -299,7 +306,7 @@ export function panelTemplate(
             case "timeline":
             case "cc":
             case "ts": return renderTranscriptList();
-            case "summary": return renderSummaryView();
+            case "summary": return summaryEnabled ? renderSummaryView() : renderReadView();
             default: return renderTranscriptList();
         }
     };
@@ -345,7 +352,7 @@ export function panelTemplate(
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
                     ${tab("read", currentLang === "zh" ? "可读" : "Read")}
-                    ${tab("summary", currentLang === "zh" ? "摘要" : "Summary")}
+                    ${summaryEnabled ? tab("summary", currentLang === "zh" ? "摘要" : "Summary") : ""}
                     ${tab("ts", currentLang === "zh" ? "原转写" : "Transcript")}
                     ${tab("cc", currentLang === "zh" ? "原字幕" : "CC")}
                 </nav>

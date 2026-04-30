@@ -4,7 +4,8 @@ import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
 import { summarizeStreaming } from "../summary/llm-provider";
-import { getSettings } from "../settings/storage";
+import { getSettings, watchSettings } from "../settings/storage";
+import type { DefaultTab } from "../settings/types";
 import { copyTranscript, downloadTranscript } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
@@ -33,6 +34,14 @@ async function openExtensionOptionsPage(): Promise<void> {
     }
 }
 
+function resolveInitialMode(defaultTab: DefaultTab, summaryEnabled: boolean): Mode {
+    if (defaultTab === "summary" && !summaryEnabled) {
+        return "read";
+    }
+
+    return defaultTab;
+}
+
 export function mountPanel(host: HTMLElement, data: PanelData): void {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
@@ -47,14 +56,29 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     }
 
     let mode: Mode = "ts";
+    let summaryEnabled = true;
     let uiLanguage: "zh" | "en" = "zh";
+    let isDisposed = false;
 
     let summaryText: string | null = null;
     let isSummarizing = false;
     let summaryError: string | null = null;
     let activeAbort: AbortController | null = null;
+    let stopWatchingSettings: (() => void) | null = null;
+
+    const clearSummaryState = (): void => {
+        activeAbort?.abort();
+        activeAbort = null;
+        summaryText = null;
+        isSummarizing = false;
+        summaryError = null;
+    };
 
     const generateSummary = () => {
+        if (!summaryEnabled || isDisposed) {
+            return;
+        }
+
         if (!data.transcript || data.transcript.length === 0) {
             summaryError = uiLanguage === "zh" ? "没有字幕数据可供总结" : "No transcript data available for summarization";
             renderPanel();
@@ -72,16 +96,19 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         activeAbort = summarizeStreaming({
             request: { transcript: data.transcript },
             onToken: (partialText: string) => {
+                if (isDisposed) return;
                 summaryText = partialText;
                 renderPanel();
             },
             onDone: (fullText: string) => {
+                if (isDisposed) return;
                 summaryText = fullText;
                 isSummarizing = false;
                 activeAbort = null;
                 renderPanel();
             },
             onError: (err: Error) => {
+                if (isDisposed) return;
                 summaryError = err.message || (uiLanguage === "zh" ? "生成摘要时发生未知错误" : "Unknown error occurred during summarization.");
                 isSummarizing = false;
                 activeAbort = null;
@@ -133,15 +160,25 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     const renderPanel = (): void => {
+        if (isDisposed) {
+            return;
+        }
+
         render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
             isSummarizing,
             text: summaryText,
             error: summaryError,
             onRetry: handleRetrySummary
-        }, handleCopy, handleDownload, handleSubtitleLanguageChange), shadow);
+        }, handleCopy, handleDownload, handleSubtitleLanguageChange, { summaryEnabled }), shadow);
     };
 
     const setMode = (nextMode: Mode): void => {
+        if (nextMode === "summary" && !summaryEnabled) {
+            mode = "read";
+            renderPanel();
+            return;
+        }
+
         mode = nextMode;
         if (mode === "summary" && !summaryText && !isSummarizing && !summaryError) {
             generateSummary();
@@ -149,6 +186,48 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             renderPanel();
         }
     };
+
+    const loadPanelSettings = async (): Promise<void> => {
+        try {
+            const settings = await getSettings();
+            if (isDisposed) {
+                return;
+            }
+
+            summaryEnabled = settings.summaryEnabled;
+            mode = resolveInitialMode(settings.defaultTab, summaryEnabled);
+
+            if (!summaryEnabled) {
+                clearSummaryState();
+            }
+
+            if (mode === "summary" && data.transcript && data.transcript.length > 0) {
+                generateSummary();
+                return;
+            }
+
+            renderPanel();
+        } catch {
+            renderPanel();
+        }
+    };
+
+    stopWatchingSettings = watchSettings((settings) => {
+        if (isDisposed || summaryEnabled === settings.summaryEnabled) {
+            return;
+        }
+
+        summaryEnabled = settings.summaryEnabled;
+
+        if (!summaryEnabled) {
+            clearSummaryState();
+            if (mode === "summary") {
+                mode = "read";
+            }
+        }
+
+        renderPanel();
+    });
 
     const toggleLang = (): void => {
         uiLanguage = uiLanguage === "zh" ? "en" : "zh";
@@ -168,10 +247,13 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     document.addEventListener("pointerdown", handlePointerDown, true);
 
     managedHost[cleanupKey] = (): void => {
-        activeAbort?.abort();
-        activeAbort = null;
+        isDisposed = true;
+        clearSummaryState();
+        stopWatchingSettings?.();
+        stopWatchingSettings = null;
         document.removeEventListener("pointerdown", handlePointerDown, true);
     };
 
     renderPanel();
+    void loadPanelSettings();
 }

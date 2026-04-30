@@ -8,16 +8,26 @@ type ExtensionRuntime = {
 };
 
 type StorageItems = Record<string, unknown>;
+type StorageChange = {
+    oldValue?: unknown;
+    newValue?: unknown;
+};
 
 type ExtensionStorageArea = {
     get(keys: string | string[], callback: (items: StorageItems) => void): void;
     set(items: StorageItems, callback: () => void): void;
 };
 
+type ExtensionStorageOnChanged = {
+    addListener(listener: (changes: Record<string, StorageChange>, areaName: string) => void): void;
+    removeListener(listener: (changes: Record<string, StorageChange>, areaName: string) => void): void;
+};
+
 type ExtensionChrome = {
     runtime?: ExtensionRuntime;
     storage?: {
         local?: ExtensionStorageArea;
+        onChanged?: ExtensionStorageOnChanged;
     };
 };
 
@@ -75,4 +85,30 @@ export async function saveSettings(settings: ExtensionSettings): Promise<Extensi
             resolve(nextSettings);
         });
     });
+}
+
+export function watchSettings(listener: (settings: ExtensionSettings) => void): () => void {
+    const storageChanges = getExtensionChrome()?.storage?.onChanged;
+    if (!storageChanges) {
+        return () => { };
+    }
+
+    const handleChange = (changes: Record<string, StorageChange>, areaName: string): void => {
+        if (areaName !== "local") {
+            return;
+        }
+
+        const settingsChange = changes[SETTINGS_STORAGE_KEY];
+        if (!settingsChange) {
+            return;
+        }
+
+        listener(mergeSettings(settingsChange.newValue));
+    };
+
+    storageChanges.addListener(handleChange);
+
+    return () => {
+        storageChanges.removeListener(handleChange);
+    };
 }
