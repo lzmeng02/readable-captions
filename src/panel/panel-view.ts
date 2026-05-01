@@ -4,7 +4,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { TranscriptLine } from "../transcript/model";
 
-export type Mode = "read" | "timeline" | "summary" | "cc" | "ts";
+export type Mode = "original" | "read" | "intensive" | "summary";
 
 export type PanelUiOptions = {
     summaryEnabled: boolean;
@@ -27,7 +27,7 @@ export function panelTemplate(
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
     onLangClick?: () => void,
-    summaryState?: {
+    aiState?: {
         isSummarizing: boolean;
         text: string | null;
         error: string | null;
@@ -222,17 +222,17 @@ export function panelTemplate(
         `;
     };
 
-    const renderSummaryView = () => {
+    const renderAiView = (title: string, loadingText: string) => {
         // Show streaming content: while summarizing AND we have partial text, show it
-        if (summaryState?.isSummarizing && summaryState?.text) {
-            const rawHtml = marked.parse(summaryState.text) as string;
+        if (aiState?.isSummarizing && aiState?.text) {
+            const rawHtml = marked.parse(aiState.text) as string;
             const cleanHtml = DOMPurify.sanitize(rawHtml);
             return html`
                 <div class="summary-container">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <h3 class="summary-title" style="margin: 0;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                            ${title}
                         </h3>
                         <span class="streaming-indicator">
                             <span class="streaming-dot"></span>
@@ -247,32 +247,32 @@ export function panelTemplate(
         }
 
         // Pure loading state (no text yet)
-        if (summaryState?.isSummarizing) {
+        if (aiState?.isSummarizing) {
             return html`
                 <div class="summary-container loading-state">
                     <div class="bili-loading">
                         <svg class="circular" viewBox="25 25 50 50">
                             <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
                         </svg>
-                        <p>${currentLang === "zh" ? "AI 总结生成中..." : "AI summarizing..."}</p>
+                        <p>${loadingText}</p>
                     </div>
                 </div>
             `;
         }
 
-        if (summaryState?.error) {
+        if (aiState?.error) {
             return html`
                 <div class="summary-container error-state">
                     <svg viewBox="0 0 24 24" width="32" height="32" stroke="#ff6666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    <p style="text-align: center; margin: 0 0 16px 0; color: #18191c;">${summaryState.error}</p>
-                    <button class="retry-btn" @click=${summaryState.onRetry}>
+                    <p style="text-align: center; margin: 0 0 16px 0; color: #18191c;">${aiState.error}</p>
+                    <button class="retry-btn" @click=${aiState.onRetry}>
                         ${currentLang === "zh" ? "重试" : "Retry"}
                     </button>
                 </div>
             `;
         }
 
-        const text = summaryState?.text;
+        const text = aiState?.text;
         if (text) {
             const rawHtml = marked.parse(text) as string;
             const cleanHtml = DOMPurify.sanitize(rawHtml);
@@ -282,9 +282,9 @@ export function panelTemplate(
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <h3 class="summary-title" style="margin: 0;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            ${currentLang === "zh" ? "AI 内容摘要" : "AI Summary"}
+                            ${title}
                         </h3>
-                        <button class="regenerate-btn" @click=${summaryState?.onRetry} title="${currentLang === 'zh' ? '基于当前字幕重新生成' : 'Regenerate with current captions'}">
+                        <button class="regenerate-btn" @click=${aiState?.onRetry} title="${currentLang === 'zh' ? '基于当前字幕重新生成' : 'Regenerate with current captions'}">
                             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
                             ${currentLang === "zh" ? "重新生成" : "Regenerate"}
                         </button>
@@ -300,12 +300,21 @@ export function panelTemplate(
         return emptyState();
     };
 
+    const renderIntensiveView = () => renderAiView(
+        currentLang === "zh" ? "AI 精读稿" : "AI Readable Draft",
+        currentLang === "zh" ? "AI 精读稿生成中..." : "AI readable draft generating...",
+    );
+
+    const renderSummaryView = () => renderAiView(
+        currentLang === "zh" ? "AI 内容摘要" : "AI Summary",
+        currentLang === "zh" ? "AI 总结生成中..." : "AI summarizing...",
+    );
+
     const content = () => {
         switch (mode) {
+            case "original": return renderTranscriptList();
             case "read": return renderReadView();
-            case "timeline":
-            case "cc":
-            case "ts": return renderTranscriptList();
+            case "intensive": return summaryEnabled ? renderIntensiveView() : renderReadView();
             case "summary": return summaryEnabled ? renderSummaryView() : renderReadView();
             default: return renderTranscriptList();
         }
@@ -351,10 +360,10 @@ export function panelTemplate(
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
-                    ${tab("read", currentLang === "zh" ? "可读" : "Read")}
+                    ${tab("original", currentLang === "zh" ? "原文" : "Original")}
+                    ${tab("read", currentLang === "zh" ? "阅读" : "Read")}
+                    ${summaryEnabled ? tab("intensive", currentLang === "zh" ? "精读" : "Deep Read") : ""}
                     ${summaryEnabled ? tab("summary", currentLang === "zh" ? "摘要" : "Summary") : ""}
-                    ${tab("ts", currentLang === "zh" ? "原转写" : "Transcript")}
-                    ${tab("cc", currentLang === "zh" ? "原字幕" : "CC")}
                 </nav>
 
                 <main class="content">${content()}</main>

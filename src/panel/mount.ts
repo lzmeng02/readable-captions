@@ -4,6 +4,7 @@ import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
 import { summarizeStreaming } from "../summary/llm-provider";
+import type { SummaryTask } from "../summary/types";
 import { getSettings, watchSettings } from "../settings/storage";
 import type { DefaultTab } from "../settings/types";
 import { copyTranscript, downloadTranscript } from "./export-utils";
@@ -24,6 +25,13 @@ type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
 };
 
+type AiState = {
+    text: string | null;
+    isSummarizing: boolean;
+    error: string | null;
+    activeAbort: AbortController | null;
+};
+
 // 获取 Chrome Extension API 以打开设置页
 async function openExtensionOptionsPage(): Promise<void> {
     const chromeApi = (globalThis as any).chrome;
@@ -35,11 +43,24 @@ async function openExtensionOptionsPage(): Promise<void> {
 }
 
 function resolveInitialMode(defaultTab: DefaultTab, summaryEnabled: boolean): Mode {
-    if (defaultTab === "summary" && !summaryEnabled) {
+    if ((defaultTab === "intensive" || defaultTab === "summary") && !summaryEnabled) {
         return "read";
     }
 
     return defaultTab;
+}
+
+function createAiState(): AiState {
+    return {
+        text: null,
+        isSummarizing: false,
+        error: null,
+        activeAbort: null,
+    };
+}
+
+function isAiMode(mode: Mode): mode is SummaryTask {
+    return mode === "intensive" || mode === "summary";
 }
 
 export function mountPanel(host: HTMLElement, data: PanelData): void {
@@ -55,71 +76,83 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         shadow.appendChild(styleTag);
     }
 
-    let mode: Mode = "ts";
+    let mode: Mode = "original";
     let summaryEnabled = true;
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
 
-    let summaryText: string | null = null;
-    let isSummarizing = false;
-    let summaryError: string | null = null;
-    let activeAbort: AbortController | null = null;
+    const aiStates: Record<SummaryTask, AiState> = {
+        intensive: createAiState(),
+        summary: createAiState(),
+    };
     let stopWatchingSettings: (() => void) | null = null;
 
-    const clearSummaryState = (): void => {
-        activeAbort?.abort();
-        activeAbort = null;
-        summaryText = null;
-        isSummarizing = false;
-        summaryError = null;
+    const clearAiState = (task: SummaryTask): void => {
+        const state = aiStates[task];
+        state.activeAbort?.abort();
+        state.activeAbort = null;
+        state.text = null;
+        state.isSummarizing = false;
+        state.error = null;
     };
 
-    const generateSummary = () => {
+    const clearAllAiStates = (): void => {
+        clearAiState("intensive");
+        clearAiState("summary");
+    };
+
+    const generateAi = (task: SummaryTask) => {
         if (!summaryEnabled || isDisposed) {
             return;
         }
 
+        const state = aiStates[task];
+
         if (!data.transcript || data.transcript.length === 0) {
-            summaryError = uiLanguage === "zh" ? "没有字幕数据可供总结" : "No transcript data available for summarization";
+            state.error = uiLanguage === "zh" ? "没有字幕数据可供总结" : "No transcript data available for summarization";
             renderPanel();
             return;
         }
 
         // Cancel any in-flight stream
-        activeAbort?.abort();
+        state.activeAbort?.abort();
 
-        isSummarizing = true;
-        summaryText = null;
-        summaryError = null;
+        state.isSummarizing = true;
+        state.text = null;
+        state.error = null;
         renderPanel();
 
-        activeAbort = summarizeStreaming({
-            request: { transcript: data.transcript },
+        state.activeAbort = summarizeStreaming({
+            request: { transcript: data.transcript, task },
             onToken: (partialText: string) => {
                 if (isDisposed) return;
-                summaryText = partialText;
+                state.text = partialText;
                 renderPanel();
             },
             onDone: (fullText: string) => {
                 if (isDisposed) return;
-                summaryText = fullText;
-                isSummarizing = false;
-                activeAbort = null;
+                state.text = fullText;
+                state.isSummarizing = false;
+                state.activeAbort = null;
                 renderPanel();
             },
             onError: (err: Error) => {
                 if (isDisposed) return;
-                summaryError = err.message || (uiLanguage === "zh" ? "生成摘要时发生未知错误" : "Unknown error occurred during summarization.");
-                isSummarizing = false;
-                activeAbort = null;
+                state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
+                state.isSummarizing = false;
+                state.activeAbort = null;
                 renderPanel();
             },
         });
     };
 
-    const handleRetrySummary = () => {
-        summaryText = null;
-        generateSummary();
+    const handleRetryAi = () => {
+        if (!isAiMode(mode)) {
+            return;
+        }
+
+        aiStates[mode].text = null;
+        generateAi(mode);
     };
 
     const handleCopy = async (): Promise<void> => {
@@ -145,12 +178,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             data.subtitleUrl = newUrl;
             console.log("[RC] Subtitle language switched, new first 3 lines:", data.transcript?.slice(0, 3).map(l => l.content));
 
-            // 如果处于 summary 模式，重置当前总结（因为语言/内容已切换）
-            if (mode === "summary") {
-                summaryText = null;
-                isSummarizing = false;
-                summaryError = null;
-                generateSummary();
+            // 如果处于 AI 模式，重置当前生成内容（因为语言/内容已切换）
+            if (isAiMode(mode)) {
+                clearAiState(mode);
+                generateAi(mode);
             } else {
                 renderPanel();
             }
@@ -164,24 +195,31 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             return;
         }
 
+        const activeAiState = isAiMode(mode) ? aiStates[mode] : aiStates.summary;
+
         render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
-            isSummarizing,
-            text: summaryText,
-            error: summaryError,
-            onRetry: handleRetrySummary
+            isSummarizing: activeAiState.isSummarizing,
+            text: activeAiState.text,
+            error: activeAiState.error,
+            onRetry: handleRetryAi
         }, handleCopy, handleDownload, handleSubtitleLanguageChange, { summaryEnabled }), shadow);
     };
 
     const setMode = (nextMode: Mode): void => {
-        if (nextMode === "summary" && !summaryEnabled) {
+        if (isAiMode(nextMode) && !summaryEnabled) {
             mode = "read";
             renderPanel();
             return;
         }
 
         mode = nextMode;
-        if (mode === "summary" && !summaryText && !isSummarizing && !summaryError) {
-            generateSummary();
+        if (isAiMode(mode)) {
+            const state = aiStates[mode];
+            if (!state.text && !state.isSummarizing && !state.error) {
+                generateAi(mode);
+                return;
+            }
+            renderPanel();
         } else {
             renderPanel();
         }
@@ -198,11 +236,11 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             mode = resolveInitialMode(settings.defaultTab, summaryEnabled);
 
             if (!summaryEnabled) {
-                clearSummaryState();
+                clearAllAiStates();
             }
 
-            if (mode === "summary" && data.transcript && data.transcript.length > 0) {
-                generateSummary();
+            if (isAiMode(mode) && data.transcript && data.transcript.length > 0) {
+                generateAi(mode);
                 return;
             }
 
@@ -220,8 +258,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         summaryEnabled = settings.summaryEnabled;
 
         if (!summaryEnabled) {
-            clearSummaryState();
-            if (mode === "summary") {
+            clearAllAiStates();
+            if (isAiMode(mode)) {
                 mode = "read";
             }
         }
@@ -248,7 +286,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     managedHost[cleanupKey] = (): void => {
         isDisposed = true;
-        clearSummaryState();
+        clearAllAiStates();
         stopWatchingSettings?.();
         stopWatchingSettings = null;
         document.removeEventListener("pointerdown", handlePointerDown, true);

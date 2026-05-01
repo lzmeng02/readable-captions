@@ -15,6 +15,8 @@ type StreamSummaryFromApiOptions = {
 
 const DEFAULT_SUMMARY_PROMPT =
     "Please summarize the following video transcript. Extract the main points and organize them logically.";
+const DEFAULT_INTENSIVE_PROMPT =
+    "请将以下视频字幕整理成适合阅读的文章稿。要求：去除明显口头语和重复表达，补全必要标点，合并被字幕切碎的句子，按主题自然分段，保持原内容顺序和细节，不做大幅总结，不添加字幕外事实。";
 
 function resolveEndpoint(provider: ExtensionSettings["summaryProvider"]): string {
     return provider === "deepseek"
@@ -32,7 +34,9 @@ function resolveModel(settings: ExtensionSettings): string {
 }
 
 function buildMessages(settings: ExtensionSettings, request: SummaryRequest): ChatMessage[] {
-    const systemPrompt = settings.summaryPromptTemplate.trim() || DEFAULT_SUMMARY_PROMPT;
+    const systemPrompt = request.task === "intensive"
+        ? DEFAULT_INTENSIVE_PROMPT
+        : settings.summaryPromptTemplate.trim() || DEFAULT_SUMMARY_PROMPT;
     const transcriptText = request.transcript.map((line) => line.content).join("\n");
 
     return [

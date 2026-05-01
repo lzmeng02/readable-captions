@@ -1,4 +1,5 @@
 import type { SummaryRequest } from "./types";
+import type { SummaryTask } from "./types";
 
 export const SUMMARY_STREAM_PORT = "readable-captions-summary-stream";
 
@@ -29,12 +30,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
 
+function isSummaryTask(value: unknown): value is SummaryTask {
+    return value === "intensive" || value === "summary";
+}
+
 export function isSummaryStartMessage(message: unknown): message is Extract<SummaryStreamClientMessage, { type: "start" }> {
     if (!isRecord(message) || message.type !== "start" || !isRecord(message.request)) {
         return false;
     }
 
-    return Array.isArray(message.request.transcript);
+    return Array.isArray(message.request.transcript) && isSummaryTask(message.request.task);
 }
 
 export function isSummaryCancelMessage(message: unknown): message is Extract<SummaryStreamClientMessage, { type: "cancel" }> {

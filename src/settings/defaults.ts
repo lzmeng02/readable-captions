@@ -8,7 +8,7 @@ import {
 } from "./types";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-    defaultTab: "ts",
+    defaultTab: "original",
     summaryEnabled: true,
     summaryProvider: "openai",
     summaryAccessMode: "api_key",

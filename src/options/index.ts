@@ -581,10 +581,10 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>默认标签页</label>
                 <select class="form-control" name="defaultTab" @change=${this.handleFieldChange}>
-                    <option value="read" ?selected=${this.settings.defaultTab === 'read'}>可读模式</option>
+                    <option value="original" ?selected=${this.settings.defaultTab === 'original'}>原文</option>
+                    <option value="read" ?selected=${this.settings.defaultTab === 'read'}>阅读</option>
+                    <option value="intensive" ?selected=${this.settings.defaultTab === 'intensive'}>精读</option>
                     <option value="summary" ?selected=${this.settings.defaultTab === 'summary'}>摘要</option>
-                    <option value="ts" ?selected=${this.settings.defaultTab === 'ts'}>原转写</option>
-                    <option value="cc" ?selected=${this.settings.defaultTab === 'cc'}>原字幕</option>
                 </select>
                 <p class="hint">打开视频时，面板默认展示的视图。</p>
             </div>
