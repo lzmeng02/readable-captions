@@ -1,13 +1,17 @@
-// src/panel/mount.ts
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
-import { summarizeStreaming } from "../summary/llm-provider";
-import type { SummaryTask } from "../summary/types";
+import { streamGeneration } from "../generation/llm-provider";
+import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { getSettings, watchSettings } from "../settings/storage";
 import type { DefaultTab } from "../settings/types";
-import { copyTranscript, downloadTranscript } from "./export-utils";
+import {
+    copyMarkdownNote,
+    copyTranscript,
+    downloadMarkdownNote,
+    downloadTranscript,
+} from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
 
@@ -18,6 +22,8 @@ type PanelData = {
     source: string;
     availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
     subtitleUrl?: string;
+    aid?: number;
+    cid?: number;
     isLoading?: boolean;
 };
 
@@ -25,14 +31,13 @@ type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
 };
 
-type AiState = {
+type GenerationState = {
     text: string | null;
-    isSummarizing: boolean;
+    isGenerating: boolean;
     error: string | null;
     activeAbort: AbortController | null;
 };
 
-// 获取 Chrome Extension API 以打开设置页
 async function openExtensionOptionsPage(): Promise<void> {
     const chromeApi = (globalThis as any).chrome;
     if (chromeApi?.runtime?.openOptionsPage) {
@@ -42,25 +47,35 @@ async function openExtensionOptionsPage(): Promise<void> {
     }
 }
 
-function resolveInitialMode(defaultTab: DefaultTab, summaryEnabled: boolean): Mode {
-    if ((defaultTab === "intensive" || defaultTab === "summary") && !summaryEnabled) {
-        return "read";
-    }
-
+function resolveInitialMode(defaultTab: DefaultTab): Mode {
     return defaultTab;
 }
 
-function createAiState(): AiState {
+function createGenerationState(): GenerationState {
     return {
         text: null,
-        isSummarizing: false,
+        isGenerating: false,
         error: null,
         activeAbort: null,
     };
 }
 
-function isAiMode(mode: Mode): mode is SummaryTask {
-    return mode === "intensive" || mode === "summary";
+function isPanelGenerationMode(mode: Mode): mode is Exclude<GenerationTask, "note"> {
+    return mode === "overview" || mode === "intensive";
+}
+
+function extractVideoTitle(): string {
+    return document.title.split("_哔哩")[0]?.split("-")[0]?.trim() || "bilibili_video";
+}
+
+function buildGenerationMetadata(data: PanelData): GenerationMetadata {
+    return {
+        title: extractVideoTitle(),
+        url: location.href,
+        aid: data.aid,
+        cid: data.cid,
+        source: data.source,
+    };
 }
 
 export function mountPanel(host: HTMLElement, data: PanelData): void {
@@ -76,54 +91,59 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         shadow.appendChild(styleTag);
     }
 
-    let mode: Mode = "original";
-    let summaryEnabled = true;
+    let mode: Mode = "overview";
+    let generationEnabled = true;
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
+    let isNoteOpen = false;
 
-    const aiStates: Record<SummaryTask, AiState> = {
-        intensive: createAiState(),
-        summary: createAiState(),
+    const generationStates: Record<GenerationTask, GenerationState> = {
+        overview: createGenerationState(),
+        intensive: createGenerationState(),
+        note: createGenerationState(),
     };
     let stopWatchingSettings: (() => void) | null = null;
 
-    const clearAiState = (task: SummaryTask): void => {
-        const state = aiStates[task];
+    const clearGenerationState = (task: GenerationTask): void => {
+        const state = generationStates[task];
         state.activeAbort?.abort();
         state.activeAbort = null;
         state.text = null;
-        state.isSummarizing = false;
+        state.isGenerating = false;
         state.error = null;
     };
 
-    const clearAllAiStates = (): void => {
-        clearAiState("intensive");
-        clearAiState("summary");
+    const clearAllGenerationStates = (): void => {
+        clearGenerationState("overview");
+        clearGenerationState("intensive");
+        clearGenerationState("note");
     };
 
-    const generateAi = (task: SummaryTask) => {
-        if (!summaryEnabled || isDisposed) {
+    const generate = (task: GenerationTask): void => {
+        if (!generationEnabled || isDisposed) {
             return;
         }
 
-        const state = aiStates[task];
+        const state = generationStates[task];
 
         if (!data.transcript || data.transcript.length === 0) {
-            state.error = uiLanguage === "zh" ? "没有字幕数据可供总结" : "No transcript data available for summarization";
+            state.error = uiLanguage === "zh" ? "没有字幕数据可供生成" : "No transcript data available for generation.";
             renderPanel();
             return;
         }
 
-        // Cancel any in-flight stream
         state.activeAbort?.abort();
-
-        state.isSummarizing = true;
+        state.isGenerating = true;
         state.text = null;
         state.error = null;
         renderPanel();
 
-        state.activeAbort = summarizeStreaming({
-            request: { transcript: data.transcript, task },
+        state.activeAbort = streamGeneration({
+            request: {
+                transcript: data.transcript,
+                task,
+                metadata: buildGenerationMetadata(data),
+            },
             onToken: (partialText: string) => {
                 if (isDisposed) return;
                 state.text = partialText;
@@ -132,27 +152,74 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             onDone: (fullText: string) => {
                 if (isDisposed) return;
                 state.text = fullText;
-                state.isSummarizing = false;
+                state.isGenerating = false;
                 state.activeAbort = null;
                 renderPanel();
             },
             onError: (err: Error) => {
                 if (isDisposed) return;
                 state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
-                state.isSummarizing = false;
+                state.isGenerating = false;
                 state.activeAbort = null;
                 renderPanel();
             },
         });
     };
 
-    const handleRetryAi = () => {
-        if (!isAiMode(mode)) {
+    const maybeGenerateForMode = (): boolean => {
+        if (!isPanelGenerationMode(mode) || !generationEnabled || !data.transcript || data.transcript.length === 0) {
+            return false;
+        }
+
+        const state = generationStates[mode];
+        if (!state.text && !state.isGenerating && !state.error) {
+            generate(mode);
+            return true;
+        }
+
+        return false;
+    };
+
+    const handleRetryGeneration = (): void => {
+        if (!isPanelGenerationMode(mode)) {
             return;
         }
 
-        aiStates[mode].text = null;
-        generateAi(mode);
+        clearGenerationState(mode);
+        generate(mode);
+    };
+
+    const handleOpenNote = (): void => {
+        isNoteOpen = true;
+        const state = generationStates.note;
+        if (generationEnabled && !state.text && !state.isGenerating && !state.error) {
+            generate("note");
+            return;
+        }
+        renderPanel();
+    };
+
+    const handleRetryNote = (): void => {
+        isNoteOpen = true;
+        clearGenerationState("note");
+        generate("note");
+    };
+
+    const handleCloseNote = (): void => {
+        isNoteOpen = false;
+        renderPanel();
+    };
+
+    const handleCopyNote = async (): Promise<void> => {
+        const note = generationStates.note.text;
+        if (!note) return;
+        await copyMarkdownNote(note);
+    };
+
+    const handleDownloadNote = (): void => {
+        const note = generationStates.note.text;
+        if (!note) return;
+        downloadMarkdownNote(note, extractVideoTitle());
     };
 
     const handleCopy = async (): Promise<void> => {
@@ -164,9 +231,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     const handleDownload = async (): Promise<void> => {
         if (!data.transcript || data.transcript.length === 0) return;
         const settings = await getSettings();
-        // 提取 B 站视频标题，去除 " - 哔哩哔哩" 等后缀
-        const videoTitle = document.title.split("_哔哩")[0]?.split("-")[0]?.trim() || "bilibili_video";
-        downloadTranscript(data.transcript, settings.downloadFormat, videoTitle);
+        downloadTranscript(data.transcript, settings.downloadFormat, extractVideoTitle());
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
@@ -176,13 +241,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             const { body } = await fetchBilibiliSubtitleBody(newUrl);
             data.transcript = normalizeBilibiliTranscript(body);
             data.subtitleUrl = newUrl;
-            console.log("[RC] Subtitle language switched, new first 3 lines:", data.transcript?.slice(0, 3).map(l => l.content));
+            clearAllGenerationStates();
+            isNoteOpen = false;
 
-            // 如果处于 AI 模式，重置当前生成内容（因为语言/内容已切换）
-            if (isAiMode(mode)) {
-                clearAiState(mode);
-                generateAi(mode);
-            } else {
+            if (!maybeGenerateForMode()) {
                 renderPanel();
             }
         } catch (err) {
@@ -195,34 +257,48 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             return;
         }
 
-        const activeAiState = isAiMode(mode) ? aiStates[mode] : aiStates.summary;
+        const activeGenerationState = isPanelGenerationMode(mode)
+            ? generationStates[mode]
+            : generationStates.overview;
+        const noteGenerationState = generationStates.note;
 
-        render(panelTemplate(mode, setMode, data, openExtensionOptionsPage, uiLanguage, toggleLang, {
-            isSummarizing: activeAiState.isSummarizing,
-            text: activeAiState.text,
-            error: activeAiState.error,
-            onRetry: handleRetryAi
-        }, handleCopy, handleDownload, handleSubtitleLanguageChange, { summaryEnabled }), shadow);
+        render(panelTemplate(
+            mode,
+            setMode,
+            data,
+            openExtensionOptionsPage,
+            uiLanguage,
+            toggleLang,
+            {
+                isGenerating: activeGenerationState.isGenerating,
+                text: activeGenerationState.text,
+                error: activeGenerationState.error,
+                onRetry: handleRetryGeneration,
+            },
+            handleCopy,
+            handleDownload,
+            handleSubtitleLanguageChange,
+            { generationEnabled },
+            {
+                isOpen: isNoteOpen,
+                isGenerating: noteGenerationState.isGenerating,
+                text: noteGenerationState.text,
+                error: noteGenerationState.error,
+                onRetry: handleRetryNote,
+                onOpen: handleOpenNote,
+                onClose: handleCloseNote,
+                onCopy: handleCopyNote,
+                onDownload: handleDownloadNote,
+            },
+        ), shadow);
     };
 
     const setMode = (nextMode: Mode): void => {
-        if (isAiMode(nextMode) && !summaryEnabled) {
-            mode = "read";
-            renderPanel();
+        mode = nextMode;
+        if (maybeGenerateForMode()) {
             return;
         }
-
-        mode = nextMode;
-        if (isAiMode(mode)) {
-            const state = aiStates[mode];
-            if (!state.text && !state.isSummarizing && !state.error) {
-                generateAi(mode);
-                return;
-            }
-            renderPanel();
-        } else {
-            renderPanel();
-        }
+        renderPanel();
     };
 
     const loadPanelSettings = async (): Promise<void> => {
@@ -232,36 +308,34 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
                 return;
             }
 
-            summaryEnabled = settings.summaryEnabled;
-            mode = resolveInitialMode(settings.defaultTab, summaryEnabled);
+            generationEnabled = settings.summaryEnabled;
+            mode = resolveInitialMode(settings.defaultTab);
 
-            if (!summaryEnabled) {
-                clearAllAiStates();
+            if (!generationEnabled) {
+                clearAllGenerationStates();
             }
 
-            if (isAiMode(mode) && data.transcript && data.transcript.length > 0) {
-                generateAi(mode);
-                return;
+            if (!maybeGenerateForMode()) {
+                renderPanel();
             }
-
-            renderPanel();
         } catch {
             renderPanel();
         }
     };
 
     stopWatchingSettings = watchSettings((settings) => {
-        if (isDisposed || summaryEnabled === settings.summaryEnabled) {
+        if (isDisposed) {
             return;
         }
 
-        summaryEnabled = settings.summaryEnabled;
+        const wasEnabled = generationEnabled;
+        generationEnabled = settings.summaryEnabled;
 
-        if (!summaryEnabled) {
-            clearAllAiStates();
-            if (isAiMode(mode)) {
-                mode = "read";
-            }
+        if (!generationEnabled) {
+            clearAllGenerationStates();
+        } else if (!wasEnabled && !maybeGenerateForMode()) {
+            renderPanel();
+            return;
         }
 
         renderPanel();
@@ -272,12 +346,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         renderPanel();
     };
 
-    // 处理点击外部关闭菜单的逻辑
     const handlePointerDown = (event: PointerEvent): void => {
         const path = event.composedPath();
-        const isInside = path.some((node: any) => node?.classList?.contains('more-actions-wrapper'));
+        const isInside = path.some((node: any) => node?.classList?.contains("more-actions-wrapper"));
         if (!isInside) {
-            // 通过触发 setMode 重新渲染来使得内部的 isMenuOpen 状态重置 (可以在 panel-view 暴露一个 close 方法，或者简单的重新渲染)
             renderPanel();
         }
     };
@@ -286,7 +358,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     managedHost[cleanupKey] = (): void => {
         isDisposed = true;
-        clearAllAiStates();
+        clearAllGenerationStates();
         stopWatchingSettings?.();
         stopWatchingSettings = null;
         document.removeEventListener("pointerdown", handlePointerDown, true);

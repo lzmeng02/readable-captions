@@ -45,6 +45,25 @@ export async function copyTranscript(transcript: Transcript, format: CopyFormat)
     await navigator.clipboard.writeText(content);
 }
 
+export async function copyMarkdownNote(markdown: string): Promise<void> {
+    await navigator.clipboard.writeText(markdown);
+}
+
+function downloadTextFile(content: string, title: string, extension: string, mimeType: string): void {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, "_") || "transcript";
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeTitle}.${extension}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 export function downloadTranscript(transcript: Transcript, format: DownloadFormat, title: string): void {
     let content = "";
     let extension = "";
@@ -60,17 +79,9 @@ export function downloadTranscript(transcript: Transcript, format: DownloadForma
         mimeType = "text/plain";
     }
 
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    
-    // Sanitize title for valid filename
-    const safeTitle = title.replace(/[\\/:*?"<>|]/g, "_") || "transcript";
-    
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${safeTitle}.${extension}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextFile(content, title, extension, mimeType);
+}
+
+export function downloadMarkdownNote(markdown: string, title: string): void {
+    downloadTextFile(markdown, `${title}_note`, "md", "text/markdown");
 }

@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
 import { getSettings, saveSettings } from "../settings/storage";
 import type { ExtensionSettings } from "../settings/types";
 
-type TabId = "general" | "summary" | "export" | "about";
+type TabId = "general" | "generation" | "export" | "about";
 
 @customElement("rc-options-app")
 export class ReadableCaptionsOptionsApp extends LitElement {
@@ -562,7 +562,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     private iconGeneral() {
         return html`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
     }
-    private iconSummary() {
+    private iconGeneration() {
         return html`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>`;
     }
     private iconExport() {
@@ -581,10 +581,9 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>默认标签页</label>
                 <select class="form-control" name="defaultTab" @change=${this.handleFieldChange}>
-                    <option value="original" ?selected=${this.settings.defaultTab === 'original'}>原文</option>
-                    <option value="read" ?selected=${this.settings.defaultTab === 'read'}>阅读</option>
+                    <option value="overview" ?selected=${this.settings.defaultTab === 'overview'}>总览</option>
                     <option value="intensive" ?selected=${this.settings.defaultTab === 'intensive'}>精读</option>
-                    <option value="summary" ?selected=${this.settings.defaultTab === 'summary'}>摘要</option>
+                    <option value="original" ?selected=${this.settings.defaultTab === 'original'}>原文</option>
                 </select>
                 <p class="hint">打开视频时，面板默认展示的视图。</p>
             </div>
@@ -593,8 +592,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="toggle-row">
                 <div class="toggle-info">
-                    <p class="toggle-title">摘要功能</p>
-                    <p class="toggle-desc">在面板中显示"摘要"标签页，支持 AI 生成内容总结。</p>
+                    <p class="toggle-title">AI 生成</p>
+                    <p class="toggle-desc">用于总览、精读和 Markdown Note 生成。关闭后仍可查看原文字幕。</p>
                 </div>
                 <label class="toggle-switch">
                     <input type="checkbox" name="summaryEnabled" ?checked=${this.settings.summaryEnabled} @change=${this.handleFieldChange} />
@@ -604,12 +603,12 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         `;
     }
 
-    private renderSummary() {
+    private renderGeneration() {
         const isApiKeySet = this.settings.summaryApiKey.length > 0;
 
         return html`
-            <h2 class="section-title">AI 摘要引擎</h2>
-            <p class="section-desc">配置大语言模型以自动生成视频内容摘要。密钥仅存储在浏览器本地。</p>
+            <h2 class="section-title">AI 生成引擎</h2>
+            <p class="section-desc">配置大语言模型以生成总览、精读稿和 Markdown Note。密钥仅存储在浏览器本地。</p>
 
             <div class="form-group">
                 <label>模型提供商</label>
@@ -659,8 +658,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>自定义 Prompt 模板</label>
-                <textarea class="form-control" name="summaryPromptTemplate" .value=${this.settings.summaryPromptTemplate} @input=${this.handleFieldChange} placeholder="请总结以下视频字幕内容，提取要点并有逻辑地组织。" rows="4"></textarea>
-                <p class="hint">留空使用默认指令。此 Prompt 将作为 System Message 发送给大模型。</p>
+                <textarea class="form-control" name="summaryPromptTemplate" .value=${this.settings.summaryPromptTemplate} @input=${this.handleFieldChange} placeholder="例如：优先提取工程实践中的判断标准和可复用经验。" rows="4"></textarea>
+                <p class="hint">留空使用默认指令。这里会作为补充指令附加到总览、精读和 Note 生成中。</p>
             </div>
         `;
     }
@@ -668,7 +667,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     private renderExport() {
         return html`
             <h2 class="section-title">导出与复制</h2>
-            <p class="section-desc">配置在面板中点击复制或下载按钮时使用的默认格式。</p>
+            <p class="section-desc">配置面板标题栏复制或下载原字幕时使用的默认格式。Markdown Note 使用独立导出动作。</p>
 
             <div class="form-group">
                 <label>复制格式</label>
@@ -695,7 +694,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="about-hero">
                 <div class="about-logo">RC</div>
                 <h2 class="about-name">可读字幕 Readable Captions</h2>
-                <p class="about-tagline">让视频内容不只是被观看，更可以被阅读。</p>
+                <p class="about-tagline">帮你判断长视频要不要看，并带走关键信息。</p>
                 <span class="about-badge">v0.1.0 · Beta</span>
             </div>
             
@@ -713,8 +712,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     <span class="about-link-value">TypeScript · Lit · Vite · Manifest V3</span>
                 </div>
                 <div class="about-link-row">
-                    <span>AI 摘要</span>
-                    <span class="about-link-value">OpenAI / DeepSeek (流式)</span>
+                    <span>AI 生成</span>
+                    <span class="about-link-value">总览 / 精读 / Markdown Note</span>
                 </div>
             </div>
         `;
@@ -724,7 +723,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         const tabContent = () => {
             switch (this.currentTab) {
                 case "general": return this.renderGeneral();
-                case "summary": return this.renderSummary();
+                case "generation": return this.renderGeneration();
                 case "export": return this.renderExport();
                 case "about": return this.renderAbout();
             }
@@ -744,8 +743,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     <div class="nav-item ${this.currentTab === "general" ? "active" : ""}" @click=${() => this.currentTab = "general"}>
                         ${this.iconGeneral()}通用设置
                     </div>
-                    <div class="nav-item ${this.currentTab === "summary" ? "active" : ""}" @click=${() => this.currentTab = "summary"}>
-                        ${this.iconSummary()}AI 摘要
+                    <div class="nav-item ${this.currentTab === "generation" ? "active" : ""}" @click=${() => this.currentTab = "generation"}>
+                        ${this.iconGeneration()}AI 生成
                     </div>
                     <div class="nav-item ${this.currentTab === "export" ? "active" : ""}" @click=${() => this.currentTab = "export"}>
                         ${this.iconExport()}导出偏好

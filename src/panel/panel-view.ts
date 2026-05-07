@@ -4,13 +4,27 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { TranscriptLine } from "../transcript/model";
 
-export type Mode = "original" | "read" | "intensive" | "summary";
+export type Mode = "overview" | "intensive" | "original";
 
-export type PanelUiOptions = {
-    summaryEnabled: boolean;
+export type GenerationUiState = {
+    isGenerating: boolean;
+    text: string | null;
+    error: string | null;
+    onRetry: () => void;
 };
 
-// 引入全局状态来记录是否收起面板和菜单状态
+export type NoteUiState = GenerationUiState & {
+    isOpen: boolean;
+    onOpen: () => void;
+    onClose: () => void;
+    onCopy: () => void;
+    onDownload: () => void;
+};
+
+export type PanelUiOptions = {
+    generationEnabled: boolean;
+};
+
 let isCollapsed = false;
 let isMenuOpen = false;
 
@@ -27,54 +41,48 @@ export function panelTemplate(
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
     onLangClick?: () => void,
-    aiState?: {
-        isSummarizing: boolean;
-        text: string | null;
-        error: string | null;
-        onRetry: () => void;
-    },
+    generationState?: GenerationUiState,
     onCopy?: () => void,
     onDownload?: () => void,
     onSubtitleLanguageChange?: (url: string) => void,
-    uiOptions: PanelUiOptions = { summaryEnabled: true },
+    uiOptions: PanelUiOptions = { generationEnabled: true },
+    noteState?: NoteUiState,
 ) {
-    const summaryEnabled = uiOptions.summaryEnabled;
+    const generationEnabled = uiOptions.generationEnabled;
 
-    // 切换收起/展开状态
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
         setMode(mode);
     };
 
-    // 切换更多菜单状态
-    const toggleMenu = (e: Event) => {
-        e.stopPropagation();
+    const toggleMenu = (event: Event) => {
+        event.stopPropagation();
         isMenuOpen = !isMenuOpen;
         setMode(mode);
     };
 
-    // 点击遮罩关闭菜单
-    const closeMenu = (e: Event) => {
-        e.stopPropagation();
+    const closeMenu = (event: Event) => {
+        event.stopPropagation();
         isMenuOpen = false;
         setMode(mode);
     };
 
-    // 处理点击设置选项
-    const handleSettingsClick = (e: Event) => {
-        e.stopPropagation();
-        isMenuOpen = false; // 关闭菜单
-        setMode(mode);      // 触发重渲染
-        onSettingsClick();  // 调用外部传入的打开设置页方法
+    const handleSettingsClick = (event: Event) => {
+        event.stopPropagation();
+        isMenuOpen = false;
+        setMode(mode);
+        onSettingsClick();
     };
 
-    // 处理点击语言选项
-    const handleLangClick = (e: Event) => {
-        e.stopPropagation();
-        // 语言切换不需要关闭菜单，所以只调外部回调，外部会触发重渲染
-        if (onLangClick) {
-            onLangClick();
-        }
+    const handleLangClick = (event: Event) => {
+        event.stopPropagation();
+        onLangClick?.();
+    };
+
+    const handleNoteClick = (event: Event) => {
+        event.stopPropagation();
+        isMenuOpen = false;
+        noteState?.onOpen();
     };
 
     const tab = (id: Mode, label: string) => {
@@ -86,7 +94,6 @@ export function panelTemplate(
         `;
     };
 
-    // 秒 -> mm:ss
     const fmt = (sec: number) => {
         const s = Math.max(0, Math.floor(sec));
         const mm = String(Math.floor(s / 60)).padStart(2, "0");
@@ -94,15 +101,36 @@ export function panelTemplate(
         return `${mm}:${ss}`;
     };
 
-    // 跳转到视频时间
     const jump = (sec: number) => {
-        const v = document.querySelector("video") as HTMLVideoElement | null;
-        if (!v) return;
-        v.currentTime = sec;
-        v.play().catch(() => { });
+        const video = document.querySelector("video") as HTMLVideoElement | null;
+        if (!video) return;
+        video.currentTime = sec;
+        video.play().catch(() => { });
     };
 
-    // 空状态 / 加载状态组件
+    const parseTimestamp = (text: string): number | null => {
+        const match = text.match(/\[(\d{1,3}):([0-5]\d)\]/) ?? text.match(/\b(\d{1,3}):([0-5]\d)\b/);
+        if (!match) {
+            return null;
+        }
+
+        return Number(match[1]) * 60 + Number(match[2]);
+    };
+
+    const handleMarkdownClick = (event: Event) => {
+        const target = event.target as HTMLElement | null;
+        const text = target?.textContent ?? "";
+        const seconds = parseTimestamp(text);
+        if (seconds !== null) {
+            jump(seconds);
+        }
+    };
+
+    const renderMarkdown = (text: string) => {
+        const rawHtml = marked.parse(text) as string;
+        return unsafeHTML(DOMPurify.sanitize(rawHtml));
+    };
+
     const emptyState = () => {
         if (data.isLoading) {
             return html`
@@ -129,10 +157,9 @@ export function panelTemplate(
         `;
     };
 
-    // 渲染元数据和语言选择器
     const renderMetaBar = () => {
-        const t = data.transcript;
-        const count = t ? t.length : 0;
+        const transcript = data.transcript;
+        const count = transcript ? transcript.length : 0;
 
         let sourceLabel = "未知";
         if (currentLang === "zh") {
@@ -146,23 +173,24 @@ export function panelTemplate(
         return html`
             <div class="meta-bar">
                 <div class="meta-info">
-                    ${currentLang === "zh" ? "来源：" : "Source: "}${sourceLabel} <span class="meta-divider">|</span> ${currentLang === "zh" ? "共" : "Total"} ${count} ${currentLang === "zh" ? "条" : "lines"}
+                    ${currentLang === "zh" ? "来源：" : "Source: "}${sourceLabel}
+                    <span class="meta-divider">|</span>
+                    ${currentLang === "zh" ? "共" : "Total"} ${count} ${currentLang === "zh" ? "条" : "lines"}
                 </div>
-                
+
                 ${hasSubtitles ? html`
                     <div class="lang-selector">
-                        <select class="lang-select" 
-                            title="${currentLang === 'zh' ? '切换语言' : 'Switch Language'}"
-                            @change=${(e: Event) => {
-                    const target = e.target as HTMLSelectElement;
-                    if (onSubtitleLanguageChange) {
-                        onSubtitleLanguageChange(target.value);
-                    }
-                }}
+                        <select
+                            class="lang-select"
+                            title="${currentLang === "zh" ? "切换语言" : "Switch Language"}"
+                            @change=${(event: Event) => {
+                                const target = event.target as HTMLSelectElement;
+                                onSubtitleLanguageChange?.(target.value);
+                            }}
                         >
-                            ${data.availableSubtitles!.map(sub => html`
-                                <option value="${sub.subtitle_url}" ?selected=${sub.subtitle_url === data.subtitleUrl}>
-                                    ${sub.lan_doc}
+                            ${data.availableSubtitles!.map((subtitle) => html`
+                                <option value="${subtitle.subtitle_url}" ?selected=${subtitle.subtitle_url === data.subtitleUrl}>
+                                    ${subtitle.lan_doc}
                                 </option>
                             `)}
                         </select>
@@ -176,80 +204,60 @@ export function panelTemplate(
     };
 
     const renderTranscriptList = () => {
-        const t = data.transcript;
-        if (!t || t.length === 0) return emptyState();
+        const transcript = data.transcript;
+        if (!transcript || transcript.length === 0) return emptyState();
 
         return html`
             ${renderMetaBar()}
             <div class="list">
-                ${t.map(
-            (l) => html`
-                        <button class="line" @click=${() => jump(l.from)}>
-                            <span class="t">${fmt(l.from)}</span>
-                            <span class="c">${l.content}</span>
-                        </button>
-                    `,
-        )}
+                ${transcript.map((line) => html`
+                    <button class="line" @click=${() => jump(line.from)}>
+                        <span class="t">${fmt(line.from)}</span>
+                        <span class="c">${line.content}</span>
+                    </button>
+                `)}
             </div>
         `;
     };
 
-    const renderReadView = () => {
-        const t = data.transcript;
-        if (!t || t.length === 0) return emptyState();
+    const renderDisabledGeneration = () => html`
+        <div class="empty-state">
+            <p>${currentLang === "zh" ? "AI 生成已关闭" : "AI generation is disabled"}</p>
+            <button class="retry-btn" @click=${onSettingsClick}>
+                ${currentLang === "zh" ? "打开设置" : "Open Settings"}
+            </button>
+        </div>
+    `;
 
-        const paragraphs = [];
-        for (let i = 0; i < t.length; i += 4) {
-            paragraphs.push(t.slice(i, i + 4));
+    const renderGenerationView = (title: string, loadingText: string) => {
+        if (!generationEnabled) {
+            return renderDisabledGeneration();
         }
 
-        return html`
-            ${renderMetaBar()}
-            <div class="article">
-                ${paragraphs.map((para) => {
-            const firstLine = para[0];
-            const text = para.map((l) => l.content).join("，");
-            return html`
-                        <p class="paragraph">
-                            <span class="inline-t" @click=${() => jump(firstLine.from)}>
-                                ${fmt(firstLine.from)}
-                            </span>
-                            ${text}。
-                        </p>
-                    `;
-        })}
-            </div>
-        `;
-    };
+        if (!data.transcript || data.transcript.length === 0) {
+            return emptyState();
+        }
 
-    const renderAiView = (title: string, loadingText: string) => {
-        // Show streaming content: while summarizing AND we have partial text, show it
-        if (aiState?.isSummarizing && aiState?.text) {
-            const rawHtml = marked.parse(aiState.text) as string;
-            const cleanHtml = DOMPurify.sanitize(rawHtml);
+        if (generationState?.isGenerating && generationState.text) {
             return html`
-                <div class="summary-container">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <h3 class="summary-title" style="margin: 0;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            ${title}
-                        </h3>
+                <div class="generation-container">
+                    <div class="generation-header">
+                        <h3 class="generation-title">${title}</h3>
                         <span class="streaming-indicator">
                             <span class="streaming-dot"></span>
                             ${currentLang === "zh" ? "生成中" : "Generating"}
                         </span>
                     </div>
-                    <div class="summary-desc markdown-body">
-                        ${unsafeHTML(cleanHtml)}
+                    <div class="generation-desc markdown-body" @click=${handleMarkdownClick}>
+                        ${renderMarkdown(generationState.text)}
                     </div>
                 </div>
             `;
         }
 
-        // Pure loading state (no text yet)
-        if (aiState?.isSummarizing) {
+        if (generationState?.isGenerating) {
             return html`
-                <div class="summary-container loading-state">
+                <div class="generation-container loading-state">
                     <div class="bili-loading">
                         <svg class="circular" viewBox="25 25 50 50">
                             <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
@@ -260,68 +268,129 @@ export function panelTemplate(
             `;
         }
 
-        if (aiState?.error) {
+        if (generationState?.error) {
             return html`
-                <div class="summary-container error-state">
+                <div class="generation-container error-state">
                     <svg viewBox="0 0 24 24" width="32" height="32" stroke="#ff6666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    <p style="text-align: center; margin: 0 0 16px 0; color: #18191c;">${aiState.error}</p>
-                    <button class="retry-btn" @click=${aiState.onRetry}>
+                    <p class="error-copy">${generationState.error}</p>
+                    <button class="retry-btn" @click=${generationState.onRetry}>
                         ${currentLang === "zh" ? "重试" : "Retry"}
                     </button>
                 </div>
             `;
         }
 
-        const text = aiState?.text;
-        if (text) {
-            const rawHtml = marked.parse(text) as string;
-            const cleanHtml = DOMPurify.sanitize(rawHtml);
-
+        if (generationState?.text) {
             return html`
-                <div class="summary-container">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <h3 class="summary-title" style="margin: 0;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00aeec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            ${title}
-                        </h3>
-                        <button class="regenerate-btn" @click=${aiState?.onRetry} title="${currentLang === 'zh' ? '基于当前字幕重新生成' : 'Regenerate with current captions'}">
+                <div class="generation-container">
+                    <div class="generation-header">
+                        <h3 class="generation-title">${title}</h3>
+                        <button class="regenerate-btn" @click=${generationState.onRetry} title="${currentLang === "zh" ? "基于当前字幕重新生成" : "Regenerate with current captions"}">
                             <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
                             ${currentLang === "zh" ? "重新生成" : "Regenerate"}
                         </button>
                     </div>
-                    <div class="summary-desc markdown-body">
-                        ${unsafeHTML(cleanHtml)}
+                    <div class="generation-desc markdown-body" @click=${handleMarkdownClick}>
+                        ${renderMarkdown(generationState.text)}
                     </div>
                 </div>
             `;
         }
 
-        // 默认返回空状态
         return emptyState();
     };
 
-    const renderIntensiveView = () => renderAiView(
-        currentLang === "zh" ? "AI 精读稿" : "AI Readable Draft",
-        currentLang === "zh" ? "AI 精读稿生成中..." : "AI readable draft generating...",
+    const renderOverviewView = () => renderGenerationView(
+        currentLang === "zh" ? "总览" : "Overview",
+        currentLang === "zh" ? "正在判断这个视频是否值得看..." : "Deciding how this video should be read...",
     );
 
-    const renderSummaryView = () => renderAiView(
-        currentLang === "zh" ? "AI 内容摘要" : "AI Summary",
-        currentLang === "zh" ? "AI 总结生成中..." : "AI summarizing...",
+    const renderIntensiveView = () => renderGenerationView(
+        currentLang === "zh" ? "精读稿" : "Intensive Read",
+        currentLang === "zh" ? "正在整理高信息密度阅读稿..." : "Generating intensive read...",
     );
+
+    const renderNoteDrawer = () => {
+        if (!noteState?.isOpen) {
+            return "";
+        }
+
+        const noteBody = () => {
+            if (!generationEnabled) {
+                return renderDisabledGeneration();
+            }
+
+            if (noteState.isGenerating && noteState.text) {
+                return html`
+                    <div class="note-status-row">
+                        <span class="streaming-indicator"><span class="streaming-dot"></span>${currentLang === "zh" ? "生成中" : "Generating"}</span>
+                    </div>
+                    <div class="note-preview markdown-body" @click=${handleMarkdownClick}>${renderMarkdown(noteState.text)}</div>
+                `;
+            }
+
+            if (noteState.isGenerating) {
+                return html`
+                    <div class="note-loading">
+                        <div class="bili-loading">
+                            <svg class="circular" viewBox="25 25 50 50">
+                                <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="4" stroke-miterlimit="10"></circle>
+                            </svg>
+                            <p>${currentLang === "zh" ? "正在生成 Markdown Note..." : "Generating Markdown Note..."}</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (noteState.error) {
+                return html`
+                    <div class="note-loading">
+                        <p class="error-copy">${noteState.error}</p>
+                        <button class="retry-btn" @click=${noteState.onRetry}>${currentLang === "zh" ? "重试" : "Retry"}</button>
+                    </div>
+                `;
+            }
+
+            if (noteState.text) {
+                return html`
+                    <div class="note-actions">
+                        <button class="note-action-btn primary" @click=${noteState.onCopy}>${currentLang === "zh" ? "复制 Markdown" : "Copy Markdown"}</button>
+                        <button class="note-action-btn" @click=${noteState.onDownload}>${currentLang === "zh" ? "下载 .md" : "Download .md"}</button>
+                    </div>
+                    <div class="note-preview markdown-body" @click=${handleMarkdownClick}>${renderMarkdown(noteState.text)}</div>
+                `;
+            }
+
+            return html`
+                <div class="note-loading">
+                    <button class="retry-btn" @click=${noteState.onRetry}>${currentLang === "zh" ? "生成 Note" : "Generate Note"}</button>
+                </div>
+            `;
+        };
+
+        return html`
+            <section class="note-drawer">
+                <div class="note-header">
+                    <h3>${currentLang === "zh" ? "Markdown Note" : "Markdown Note"}</h3>
+                    <button class="note-close" @click=${noteState.onClose} title="${currentLang === "zh" ? "关闭" : "Close"}">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+                ${noteBody()}
+            </section>
+        `;
+    };
 
     const content = () => {
         switch (mode) {
+            case "overview": return renderOverviewView();
+            case "intensive": return renderIntensiveView();
             case "original": return renderTranscriptList();
-            case "read": return renderReadView();
-            case "intensive": return summaryEnabled ? renderIntensiveView() : renderReadView();
-            case "summary": return summaryEnabled ? renderSummaryView() : renderReadView();
-            default: return renderTranscriptList();
         }
     };
 
     return html`
-        <div class="panel ${isCollapsed ? 'collapsed' : ''}">
+        <div class="panel ${isCollapsed ? "collapsed" : ""}">
             <header class="header">
                 <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? (currentLang === "zh" ? "点击展开面板" : "Click to expand") : (currentLang === "zh" ? "点击收起面板" : "Click to collapse")}>
                     <span class="title">${currentLang === "zh" ? "可读字幕" : "Readable Captions"}</span>
@@ -329,21 +398,25 @@ export function panelTemplate(
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" title="${currentLang === 'zh' ? '下载' : 'Download'}" @click=${onDownload}>
+                    <button class="icon-btn" title="${currentLang === "zh" ? "下载原字幕" : "Download transcript"}" @click=${onDownload}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" title="${currentLang === 'zh' ? '复制' : 'Copy'}" @click=${onCopy}>
+                    <button class="icon-btn" title="${currentLang === "zh" ? "复制原字幕" : "Copy transcript"}" @click=${onCopy}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
-                    
+
                     <div class="more-actions-wrapper">
-                        <button class="icon-btn ${isMenuOpen ? 'active' : ''}" title="${currentLang === 'zh' ? '更多' : 'More'}" @click=${toggleMenu}>
+                        <button class="icon-btn ${isMenuOpen ? "active" : ""}" title="${currentLang === "zh" ? "更多" : "More"}" @click=${toggleMenu}>
                             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
                         </button>
-                        
+
                         ${isMenuOpen ? html`
                             <div class="menu-overlay" @click=${closeMenu}></div>
                             <div class="overflow-menu">
+                                <button class="overflow-item" @click=${handleNoteClick}>
+                                    <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+                                    <span class="overflow-item-label">${currentLang === "zh" ? "导出 Markdown Note" : "Export Markdown Note"}</span>
+                                </button>
                                 <button class="overflow-item" @click=${handleSettingsClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                                     <span class="overflow-item-label">${currentLang === "zh" ? "设置" : "Settings"}</span>
@@ -353,20 +426,20 @@ export function panelTemplate(
                                     <span class="overflow-item-label">${currentLang === "zh" ? "语言：中文" : "Lang: English"}</span>
                                 </button>
                             </div>
-                        ` : ''}
+                        ` : ""}
                     </div>
                 </div>
             </header>
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
+                    ${tab("overview", currentLang === "zh" ? "总览" : "Overview")}
+                    ${tab("intensive", currentLang === "zh" ? "精读" : "Intensive")}
                     ${tab("original", currentLang === "zh" ? "原文" : "Original")}
-                    ${tab("read", currentLang === "zh" ? "阅读" : "Read")}
-                    ${summaryEnabled ? tab("intensive", currentLang === "zh" ? "精读" : "Deep Read") : ""}
-                    ${summaryEnabled ? tab("summary", currentLang === "zh" ? "摘要" : "Summary") : ""}
                 </nav>
 
                 <main class="content">${content()}</main>
+                ${renderNoteDrawer()}
             ` : ""}
         </div>
     `;
@@ -389,15 +462,16 @@ export const panelStyles = css`
     }
 
     .panel {
-        height: 540px; 
-        max-height: 85vh; 
+        height: 540px;
+        max-height: 85vh;
         display: flex;
         flex-direction: column;
-        border-radius: 6px; 
+        border-radius: 6px;
         background: #ffffff;
-        border: 1px solid #e3e5e7; 
-        overflow: hidden; 
-        color: #18191c; 
+        border: 1px solid #e3e5e7;
+        overflow: hidden;
+        color: #18191c;
+        position: relative;
     }
 
     .panel.collapsed {
@@ -409,7 +483,7 @@ export const panelStyles = css`
         align-items: center;
         justify-content: space-between;
         padding: 0 16px;
-        height: 46px; 
+        height: 46px;
         flex-shrink: 0;
     }
 
@@ -454,26 +528,26 @@ export const panelStyles = css`
         cursor: pointer;
         transition: all 0.2s;
     }
+
     .icon-btn:hover {
         background: #f4f5f7;
         color: #18191c;
     }
 
     .icon-btn.active {
-        background: #e3e5e7; 
+        background: #e3e5e7;
         color: #18191c;
     }
 
-    /* ======= 新设计的下拉菜单 ======= */
     .more-actions-wrapper {
         position: relative;
     }
 
     .menu-overlay {
         position: fixed;
-        top: 0; 
-        left: 0; 
-        width: 100vw; 
+        top: 0;
+        left: 0;
+        width: 100vw;
         height: 100vh;
         z-index: 90;
         cursor: default;
@@ -481,31 +555,18 @@ export const panelStyles = css`
 
     .overflow-menu {
         position: absolute;
-        top: calc(100% + 6px); 
+        top: calc(100% + 6px);
         right: 0;
-        width: 132px;
+        width: 190px;
         padding: 6px;
-        border: 1px solid #e3e5e7; 
-        border-radius: 8px; 
+        border: 1px solid #e3e5e7;
+        border-radius: 8px;
         background: #ffffff;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0, 0, 0, 0.02);
         z-index: 100;
         display: flex;
         flex-direction: column;
-        gap: 2px; 
-        transform-origin: top right;
-        animation: menuFadeIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-    }
-
-    @keyframes menuFadeIn {
-        from {
-            opacity: 0;
-            transform: scale(0.95) translateY(-4px);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-        }
+        gap: 2px;
     }
 
     .overflow-item {
@@ -514,9 +575,9 @@ export const panelStyles = css`
         gap: 8px;
         width: 100%;
         border: none;
-        border-radius: 6px; 
+        border-radius: 6px;
         background: transparent;
-        color: #18191c; 
+        color: #18191c;
         cursor: pointer;
         font-size: 13px;
         line-height: 1.4;
@@ -549,23 +610,22 @@ export const panelStyles = css`
         color: #00aeec;
     }
 
-    /* ======= B站原生风格 Tab ======= */
     .bili-tabs {
         display: flex;
-        padding: 0 8px; 
+        padding: 0 8px;
         border-bottom: 1px solid #e3e5e7;
         flex-shrink: 0;
     }
 
     .bili-tabs .tab {
-        flex: 1; 
-        text-align: center; 
+        flex: 1;
+        text-align: center;
         background: transparent;
         border: none;
         padding: 10px 0;
         font-size: 14px;
-        font-family: inherit; 
-        white-space: nowrap; 
+        font-family: inherit;
+        white-space: nowrap;
         color: #61666d;
         cursor: pointer;
         position: relative;
@@ -582,18 +642,17 @@ export const panelStyles = css`
     }
 
     .bili-tabs .tab.active::after {
-        content: '';
+        content: "";
         position: absolute;
-        bottom: -1px; 
+        bottom: -1px;
         left: 50%;
         transform: translateX(-50%);
-        width: 24px; 
+        width: 24px;
         height: 2px;
         background: #00aeec;
         border-radius: 2px;
     }
 
-    /* ======= 内容区域 ======= */
     .content {
         padding: 12px 12px 16px;
         overflow-y: auto;
@@ -602,28 +661,30 @@ export const panelStyles = css`
         flex-direction: column;
     }
 
-    .content::-webkit-scrollbar {
+    .content::-webkit-scrollbar,
+    .note-preview::-webkit-scrollbar {
         width: 6px;
     }
-    .content::-webkit-scrollbar-track {
+
+    .content::-webkit-scrollbar-track,
+    .note-preview::-webkit-scrollbar-track {
         background: transparent;
     }
-    .content::-webkit-scrollbar-thumb {
+
+    .content::-webkit-scrollbar-thumb,
+    .note-preview::-webkit-scrollbar-thumb {
         background: #e3e5e7;
         border-radius: 3px;
     }
-    .content::-webkit-scrollbar-thumb:hover {
-        background: #c9ccd0;
-    }
 
-    /* ======= 元数据与语言选择器 ======= */
     .meta-bar {
         display: flex;
         align-items: center;
-        justify-content: space-between; 
-        padding: 0 4px 12px 4px; 
+        justify-content: space-between;
+        padding: 0 4px 12px 4px;
+        gap: 10px;
     }
-    
+
     .meta-info {
         font-size: 12px;
         color: #9499a0;
@@ -659,27 +720,14 @@ export const panelStyles = css`
         border-color: #00aeec;
         color: #00aeec;
     }
-    
-    .lang-select:focus {
-        border-color: #e3e5e7;
-    }
-
-    .lang-select:focus:hover {
-        border-color: #00aeec;
-    }
 
     .lang-arrow {
         position: absolute;
         right: 6px;
-        pointer-events: none; 
+        pointer-events: none;
         color: #9499a0;
-        transition: color 0.2s;
-    }
-    .lang-select:hover + .lang-arrow {
-        color: #00aeec;
     }
 
-    /* ======= 通用列表项 ======= */
     .list {
         display: flex;
         flex-direction: column;
@@ -690,16 +738,17 @@ export const panelStyles = css`
         text-align: left;
         border: none;
         border-radius: 6px;
-        padding: 8px; 
+        padding: 8px;
         background: transparent;
         cursor: pointer;
         display: flex;
-        gap: 12px; 
-        align-items: baseline; 
+        gap: 12px;
+        align-items: baseline;
         transition: background-color 0.2s;
     }
+
     .line:hover {
-        background: #f4f5f7; 
+        background: #f4f5f7;
     }
 
     .t {
@@ -708,89 +757,60 @@ export const panelStyles = css`
         color: #9499a0;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
-        margin-top: 0; 
         transition: color 0.2s;
     }
-    
+
     .line:hover .t {
-        color: #00aeec; 
+        color: #00aeec;
     }
 
     .c {
         flex: 1 1 auto;
-        color: #18191c; 
+        color: #18191c;
         font-size: 13px;
         line-height: 1.6;
     }
 
-    /* ======= 视图 2：可读段落 ======= */
-    .article {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        padding: 0 4px; 
-    }
-    
-    .paragraph {
-        margin: 0;
-        font-size: 13px;  
-        line-height: 1.6; 
-        color: #18191c;
-        text-align: justify;
-    }
-
-    .inline-t {
-        display: inline-block;
-        font-size: 12px;
-        background: #f4f5f7;
-        color: #61666d;
-        padding: 0 6px;
-        border-radius: 4px;
-        margin-right: 6px;
-        font-variant-numeric: tabular-nums;
-        cursor: pointer;
-        transition: all 0.2s;
-        user-select: none;
-    }
-    .inline-t:hover {
-        background: #e3e5e7;
-        color: #00aeec;
-    }
-
-    /* ======= 视图 3：摘要 ======= */
-    .summary-container {
+    .generation-container {
         display: flex;
         flex-direction: column;
         gap: 12px;
         padding: 0 8px;
     }
 
-    .summary-title {
+    .generation-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 2px;
+    }
+
+    .generation-title {
         margin: 0;
         font-size: 14px;
-        font-weight: 500;
+        font-weight: 600;
         color: #18191c;
         display: flex;
         align-items: center;
     }
 
-    .summary-desc {
+    .generation-desc {
         color: #18191c;
         font-size: 13px;
         line-height: 1.6;
     }
 
-    /* Markdown 样式重置，使其融入 Bilibili 风格 */
-    .markdown-body h1, 
-    .markdown-body h2, 
-    .markdown-body h3, 
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3,
     .markdown-body h4 {
         margin: 12px 0 8px;
         font-weight: 600;
         font-size: 14px;
         color: #18191c;
     }
-    
+
     .markdown-body h1:first-child,
     .markdown-body h2:first-child,
     .markdown-body h3:first-child,
@@ -807,7 +827,8 @@ export const panelStyles = css`
         margin-bottom: 0;
     }
 
-    .markdown-body ul, .markdown-body ol {
+    .markdown-body ul,
+    .markdown-body ol {
         margin: 0 0 12px;
         padding-left: 20px;
     }
@@ -820,14 +841,14 @@ export const panelStyles = css`
         font-weight: 600;
         color: #18191c;
     }
-    
+
     .markdown-body blockquote {
         margin: 0 0 12px;
         padding-left: 12px;
         border-left: 4px solid #e3e5e7;
         color: #61666d;
     }
-    
+
     .markdown-body code {
         font-family: monospace;
         background-color: #f4f5f7;
@@ -836,20 +857,12 @@ export const panelStyles = css`
         font-size: 12px;
     }
 
-    .points-title {
-        margin: 0 0 8px 4px;
-        font-size: 13px;
-        font-weight: 500;
-        color: #18191c;
+    .markdown-body a,
+    .markdown-body li,
+    .markdown-body p {
+        cursor: default;
     }
 
-    .summary-points {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    /* ======= 空状态 ======= */
     .empty-state {
         display: flex;
         flex-direction: column;
@@ -859,10 +872,11 @@ export const panelStyles = css`
         font-size: 13px;
         padding: 60px 0;
         gap: 12px;
+        text-align: center;
     }
 
-    /* ======= 摘要加载/报错状态 ======= */
-    .loading-state, .error-state {
+    .loading-state,
+    .error-state {
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -915,7 +929,11 @@ export const panelStyles = css`
         cursor: pointer;
         transition: background 0.2s;
     }
-    
+
+    .retry-btn:hover {
+        background: #00bdfa;
+    }
+
     .regenerate-btn {
         display: flex;
         align-items: center;
@@ -928,17 +946,14 @@ export const panelStyles = css`
         font-size: 12px;
         cursor: pointer;
         transition: all 0.2s;
+        flex: 0 0 auto;
     }
+
     .regenerate-btn:hover {
         background: #f4f5f7;
         color: #00aeec;
     }
 
-    .retry-btn:hover {
-        background: #00bdfa;
-    }
-
-    /* ======= 流式生成指示器 ======= */
     .streaming-indicator {
         display: flex;
         align-items: center;
@@ -946,6 +961,7 @@ export const panelStyles = css`
         font-size: 12px;
         color: #00aeec;
         user-select: none;
+        flex: 0 0 auto;
     }
 
     .streaming-dot {
@@ -959,5 +975,122 @@ export const panelStyles = css`
     @keyframes pulse {
         0%, 100% { opacity: 0.3; transform: scale(0.8); }
         50% { opacity: 1; transform: scale(1.2); }
+    }
+
+    .error-copy {
+        text-align: center;
+        margin: 0 0 16px 0;
+        color: #18191c;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .note-drawer {
+        position: absolute;
+        top: 92px;
+        right: 12px;
+        bottom: 12px;
+        left: 12px;
+        z-index: 80;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #e3e5e7;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        overflow: hidden;
+    }
+
+    .note-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 44px;
+        padding: 0 12px 0 14px;
+        border-bottom: 1px solid #e3e5e7;
+        flex: 0 0 auto;
+    }
+
+    .note-header h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #18191c;
+    }
+
+    .note-close {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: #9499a0;
+        cursor: pointer;
+    }
+
+    .note-close:hover {
+        background: #f4f5f7;
+        color: #18191c;
+    }
+
+    .note-actions {
+        display: flex;
+        gap: 8px;
+        padding: 12px 14px;
+        border-bottom: 1px solid #f0f1f3;
+        flex: 0 0 auto;
+    }
+
+    .note-action-btn {
+        border: 1px solid #e3e5e7;
+        border-radius: 4px;
+        background: #ffffff;
+        color: #61666d;
+        cursor: pointer;
+        font-size: 13px;
+        padding: 6px 12px;
+    }
+
+    .note-action-btn.primary {
+        border-color: #00aeec;
+        background: #00aeec;
+        color: #ffffff;
+    }
+
+    .note-action-btn:hover {
+        border-color: #00aeec;
+        color: #00aeec;
+    }
+
+    .note-action-btn.primary:hover {
+        background: #00bdfa;
+        color: #ffffff;
+    }
+
+    .note-preview {
+        padding: 14px;
+        overflow-y: auto;
+        font-size: 13px;
+        line-height: 1.6;
+        flex: 1;
+    }
+
+    .note-loading {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        color: #9499a0;
+        font-size: 13px;
+    }
+
+    .note-status-row {
+        padding: 10px 14px;
+        border-bottom: 1px solid #f0f1f3;
     }
 `;

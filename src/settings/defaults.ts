@@ -8,7 +8,7 @@ import {
 } from "./types";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-    defaultTab: "original",
+    defaultTab: "overview",
     summaryEnabled: true,
     summaryProvider: "openai",
     summaryAccessMode: "api_key",
@@ -35,11 +35,23 @@ function pickString(value: unknown, fallback = ""): string {
     return typeof value === "string" ? value : fallback;
 }
 
+function pickDefaultTab(value: unknown): ExtensionSettings["defaultTab"] {
+    if (value === "summary") {
+        return "overview";
+    }
+
+    if (value === "read") {
+        return "intensive";
+    }
+
+    return pickEnum(value, DEFAULT_TAB_VALUES, DEFAULT_SETTINGS.defaultTab);
+}
+
 export function mergeSettings(value: unknown): ExtensionSettings {
     const raw = isRecord(value) ? value : {};
 
     return {
-        defaultTab: pickEnum(raw.defaultTab, DEFAULT_TAB_VALUES, DEFAULT_SETTINGS.defaultTab),
+        defaultTab: pickDefaultTab(raw.defaultTab),
         summaryEnabled:
             typeof raw.summaryEnabled === "boolean" ? raw.summaryEnabled : DEFAULT_SETTINGS.summaryEnabled,
         summaryProvider: pickEnum(

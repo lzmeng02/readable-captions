@@ -1,12 +1,12 @@
 import { getSettings } from "./settings/storage";
-import { streamSummaryFromApi } from "./summary/llm-api";
+import { streamGenerationFromApi } from "./generation/llm-api";
 import {
-    SUMMARY_STREAM_PORT,
-    isSummaryCancelMessage,
-    isSummaryStartMessage,
-    type SummaryStreamBackgroundMessage,
-} from "./summary/protocol";
-import type { SummaryRequest } from "./summary/types";
+    GENERATION_STREAM_PORT,
+    isGenerationCancelMessage,
+    isGenerationStartMessage,
+    type GenerationStreamBackgroundMessage,
+} from "./generation/protocol";
+import type { GenerationRequest } from "./generation/types";
 
 type RuntimePort = {
     name: string;
@@ -33,7 +33,7 @@ function getExtensionChrome(): ExtensionChrome | null {
     return (globalThis as typeof globalThis & { chrome?: ExtensionChrome }).chrome ?? null;
 }
 
-function postToPort(port: RuntimePort, message: SummaryStreamBackgroundMessage): void {
+function postToPort(port: RuntimePort, message: GenerationStreamBackgroundMessage): void {
     try {
         port.postMessage(message);
     } catch {
@@ -45,10 +45,14 @@ function toError(value: unknown): Error {
     return value instanceof Error ? value : new Error(String(value));
 }
 
-async function runSummaryStream(port: RuntimePort, request: SummaryRequest, controller: AbortController): Promise<void> {
+async function runGenerationStream(
+    port: RuntimePort,
+    request: GenerationRequest,
+    controller: AbortController,
+): Promise<void> {
     try {
         const settings = await getSettings();
-        const fullText = await streamSummaryFromApi({
+        const fullText = await streamGenerationFromApi({
             settings,
             request,
             signal: controller.signal,
@@ -75,21 +79,21 @@ async function runSummaryStream(port: RuntimePort, request: SummaryRequest, cont
 }
 
 getExtensionChrome()?.runtime?.onConnect?.addListener((port) => {
-    if (port.name !== SUMMARY_STREAM_PORT) {
+    if (port.name !== GENERATION_STREAM_PORT) {
         return;
     }
 
     let activeController: AbortController | null = null;
 
     port.onMessage.addListener((message) => {
-        if (isSummaryCancelMessage(message)) {
+        if (isGenerationCancelMessage(message)) {
             activeController?.abort();
             activeController = null;
             return;
         }
 
-        if (!isSummaryStartMessage(message)) {
-            postToPort(port, { type: "error", message: "Invalid summary request." });
+        if (!isGenerationStartMessage(message)) {
+            postToPort(port, { type: "error", message: "Invalid generation request." });
             return;
         }
 
@@ -97,7 +101,7 @@ getExtensionChrome()?.runtime?.onConnect?.addListener((port) => {
         const controller = new AbortController();
         activeController = controller;
 
-        void runSummaryStream(port, message.request, controller).finally(() => {
+        void runGenerationStream(port, message.request, controller).finally(() => {
             if (activeController === controller) {
                 activeController = null;
             }

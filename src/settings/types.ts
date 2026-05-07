@@ -1,4 +1,4 @@
-export const DEFAULT_TAB_VALUES = ["original", "read", "intensive", "summary"] as const;
+export const DEFAULT_TAB_VALUES = ["overview", "intensive", "original"] as const;
 export const SUMMARY_PROVIDER_VALUES = ["openai", "deepseek"] as const;
 export const SUMMARY_ACCESS_MODE_VALUES = ["api_key", "webapp"] as const;
 export const COPY_FORMAT_VALUES = ["readable_text", "timestamped_text"] as const;

@@ -27,6 +27,8 @@ function fillData(data: any) {
         source: data.source, 
         availableSubtitles: data.availableSubtitles, 
         subtitleUrl: data.subtitleUrl,
+        aid: data.aid,
+        cid: data.cid,
         isLoading: false
     });
 }
