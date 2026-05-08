@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(claude plugin *)"
+      "Bash(claude plugin *)",
+      "WebSearch",
+      "WebFetch(domain:search.bilibili.com)",
+      "WebFetch(domain:api.bilibili.com)",
+      "WebFetch(domain:www.google.com)"
     ]
   },
   "enabledPlugins": {

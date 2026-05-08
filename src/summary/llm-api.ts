@@ -30,7 +30,7 @@ function resolveModel(settings: ExtensionSettings): string {
         return configuredModel;
     }
 
-    return settings.summaryProvider === "deepseek" ? "deepseek-chat" : "gpt-3.5-turbo";
+    return settings.summaryProvider === "deepseek" ? "deepseek-v4-flash" : "gpt-3.5-turbo";
 }
 
 function buildMessages(settings: ExtensionSettings, request: SummaryRequest): ChatMessage[] {

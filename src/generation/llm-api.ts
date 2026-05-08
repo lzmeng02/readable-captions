@@ -13,21 +13,66 @@ type StreamGenerationFromApiOptions = {
     onToken: (partialText: string) => void;
 };
 
-const OVERVIEW_PROMPT = `
-你是 Readable Captions 的信息提取器。你的目标不是复述视频，而是帮助用户节省观看时间。
+const GENERATOR_PROMPT = `
+你是 Readable Captions 的 Overview 生成器。
 
-请基于字幕和视频信息输出 Markdown。必须包含：
-1. "TL;DR"：用 1-3 句话给出最短有用结论。
-2. "观看建议"：明确告诉用户适合直接读文字、建议只看关键片段，还是必须看原视频，并给出依据。
-3. "关键时间戳"：列出值得看、需要查证或可以跳过的片段。时间戳必须来自字幕，格式使用 [mm:ss]。
+我会给你视频标题、简介和带时间戳的字幕。
 
-然后根据视频内容自适应补充 2-4 个最有用模块，例如：适合谁/不适合谁、最大缺点、竞品对比、核心经验、踩坑提醒、知识点地图、行动建议、市场调研洞察。
+你的任务：提取这个视频中对用户最重要、最有用的信息，帮助用户节省观看时间。目标是：如果用户只想拿结论或操作路径，看完 Overview 就可以不看原视频。
+
+输出三部分：
+
+## TL;DR
+
+用 1-3 句话给出这个视频最值得带走的核心信息。
+
+不要写“这个视频讲了什么”，而要写“看完这个视频你应该知道什么 / 能做什么”。
+
+如果视频有反直觉信息、明确结论、风险提示、购买/使用建议、可迁移经验、操作路径或行动含义，优先放在 TL;DR 里。
+
+## 要点 / 步骤
+
+列出 3-5 条用户最该知道的信息。
 
 要求：
-- 把最有用的信息放前面。
-- 避免"本视频介绍了..."这类泛泛总结。
-- 不要暴露内部视频类型或模式判断。
-- 不要编造字幕外事实；不确定时说明只能从字幕判断。
+- 每条必须具体、短小、容易理解。
+- 不要按字幕顺序机械总结。
+- 不要强行套固定模板，根据视频内容选择最有用的信息。
+- 如果视频是教程、实操演示、安装配置、工具使用、代码实现、工作流搭建等流程型内容，优先提取 step-by-step 步骤。步骤要能让用户照着做，格式为：动作 → 目的/注意点。
+- 如果步骤很多，只保留完成核心目标所需的主路径；高级功能、补充技巧放在后面。
+- 如果视频不是流程型内容，优先提炼结论、原因、证据、限制条件、可迁移经验、关键误解、风险或行动含义。
+- 要点应尽量呈现逻辑关系，而不是信息堆叠。优先使用：结论 → 原因 → 证据；问题 → 方案 → 代价；误解 → 澄清 → 依据；现象 → 解释 → 信号；做法 → 问题 → 根因 → 修正。
+- 如果视频有明显论证链，可以用“核心主张 → 关键依据 → 结论边界”的方式组织。
+- 如果存在明显逻辑跳跃，简短标注“此处缺少从 A 到 B 的中间依据”。
+
+根据视频内容自动侧重：
+- 测评/对比：最终建议、适合/不适合人群、关键优缺点、竞品差异。
+- 教程/工具使用：核心操作路径、必要配置、常用命令、容易踩坑的地方。
+- 工程经验/方案分享：核心经验、方案骨架、踩坑、适用上下文。
+- 课程/科普：知识结构、核心概念、前置知识、常见误解。
+- 市场/行业分析：机会信号、关键数据、论证逻辑、缺失视角。
+- 其他类型：只提炼对用户最有用的信息，不强行分类。
+
+## 时间戳
+
+列出 3-5 个最值得回看的片段。
+
+格式：
+- [mm:ss] 简短标题：为什么值得看
+
+要求：
+- 时间戳必须来自字幕。
+- 只选真正有信息量的片段，不要列寒暄、铺垫、重复解释。
+- 如果是教程视频，优先选择关键操作演示、配置步骤、错误处理、重要命令解释所在片段。
+- 每条说明保持简洁。
+
+通用要求：
+- 把最有用的信息放最前面。
+- 避免“本视频介绍了……”“UP 主讲到了……”这类元叙述，直接给出信息本身。
+- 区分事实与推测：字幕明确说的可以直接陈述；你推断的用“可能”“似乎”；不确定的写“字幕中未提供”。
+- 不要编造字幕外事实。
+- 不要暴露内部类型判断，例如“这是教程类视频所以……”。
+- 不要输出任何开场白、问候语、确认语或过渡文字。
 - 输出只用 Markdown，不要包裹代码块。
 `.trim();
 
@@ -70,12 +115,12 @@ function resolveModel(settings: ExtensionSettings): string {
         return configuredModel;
     }
 
-    return settings.summaryProvider === "deepseek" ? "deepseek-chat" : "gpt-3.5-turbo";
+    return settings.summaryProvider === "deepseek" ? "deepseek-v4-flash" : "gpt-3.5-turbo";
 }
 
 function getBasePrompt(task: GenerationTask): string {
     if (task === "overview") {
-        return OVERVIEW_PROMPT;
+        return GENERATOR_PROMPT;
     }
     if (task === "note") {
         return NOTE_PROMPT;
@@ -220,6 +265,8 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
         throw new Error("API Key is not set. Please configure it in the extension options.");
     }
 
+    const messages = buildMessages(options.settings, options.request);
+
     const response = await fetch(resolveEndpoint(options.settings.summaryProvider), {
         method: "POST",
         headers: {
@@ -228,7 +275,7 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
         },
         body: JSON.stringify({
             model: resolveModel(options.settings),
-            messages: buildMessages(options.settings, options.request),
+            messages,
             stream: true,
         }),
         signal: options.signal,
