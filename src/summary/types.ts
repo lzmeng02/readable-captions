@@ -1,9 +1,11 @@
 import type { Transcript } from "../transcript/model";
 
 export type SummaryStatus = "ready" | "placeholder";
+export type SummaryTask = "intensive" | "summary";
 
 export type SummaryRequest = {
     transcript: Transcript;
+    task: SummaryTask;
 };
 
 export type SummarySection = {
