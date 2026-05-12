@@ -141,6 +141,14 @@ function resolveModel(settings: ExtensionSettings, task: GenerationTask): string
     throw new Error("OpenAI model is not set. Please configure a model in the extension options.");
 }
 
+function resolvePromptTemplate(settings: ExtensionSettings, task: GenerationTask): string {
+    if (task === "overview") {
+        return settings.generationPromptTemplates.overview;
+    }
+
+    return settings.generationPromptTemplates.intensive;
+}
+
 function getBasePrompt(task: GenerationTask): string {
     if (task === "overview") {
         return GENERATOR_PROMPT;
@@ -152,7 +160,7 @@ function getBasePrompt(task: GenerationTask): string {
 }
 
 function buildSystemPrompt(settings: ExtensionSettings, task: GenerationTask): string {
-    const customPrompt = settings.generationPromptTemplate.trim();
+    const customPrompt = resolvePromptTemplate(settings, task).trim();
     const basePrompt = getBasePrompt(task);
     if (!customPrompt) {
         return basePrompt;

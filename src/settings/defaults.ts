@@ -17,7 +17,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
         intensive: "",
     },
     generationApiKey: "",
-    generationPromptTemplate: "",
+    generationPromptTemplates: {
+        overview: "",
+        intensive: "",
+    },
     copyFormat: "readable_text",
     downloadFormat: "txt",
 };
@@ -64,6 +67,16 @@ function pickGenerationModels(raw: Record<string, unknown>): ExtensionSettings["
     };
 }
 
+function pickGenerationPromptTemplates(raw: Record<string, unknown>): ExtensionSettings["generationPromptTemplates"] {
+    const templates = isRecord(raw.generationPromptTemplates) ? raw.generationPromptTemplates : {};
+    const legacyPrompt = pickString(raw.generationPromptTemplate, pickString(raw.summaryPromptTemplate));
+
+    return {
+        overview: pickString(templates.overview, legacyPrompt),
+        intensive: pickString(templates.intensive, legacyPrompt),
+    };
+}
+
 export function mergeSettings(value: unknown): ExtensionSettings {
     const raw = isRecord(value) ? value : {};
 
@@ -85,10 +98,7 @@ export function mergeSettings(value: unknown): ExtensionSettings {
         ),
         generationModels: pickGenerationModels(raw),
         generationApiKey: pickString(raw.generationApiKey, pickString(raw.summaryApiKey)),
-        generationPromptTemplate: pickString(
-            raw.generationPromptTemplate,
-            pickString(raw.summaryPromptTemplate),
-        ),
+        generationPromptTemplates: pickGenerationPromptTemplates(raw),
         copyFormat: pickEnum(raw.copyFormat, COPY_FORMAT_VALUES, DEFAULT_SETTINGS.copyFormat),
         downloadFormat: pickEnum(raw.downloadFormat, DOWNLOAD_FORMAT_VALUES, DEFAULT_SETTINGS.downloadFormat),
     };

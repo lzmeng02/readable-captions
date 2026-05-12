@@ -15,6 +15,11 @@ export type GenerationModels = {
     intensive: string;
 };
 
+export type GenerationPromptTemplates = {
+    overview: string;
+    intensive: string;
+};
+
 export type ExtensionSettings = {
     defaultTab: DefaultTab;
     generationEnabled: boolean;
@@ -22,7 +27,7 @@ export type ExtensionSettings = {
     generationAccessMode: GenerationAccessMode;
     generationModels: GenerationModels;
     generationApiKey: string;
-    generationPromptTemplate: string;
+    generationPromptTemplates: GenerationPromptTemplates;
     copyFormat: CopyFormat;
     downloadFormat: DownloadFormat;
 };

@@ -55,7 +55,7 @@ function getGenerationSettingsKey(settings: ExtensionSettings): string {
     return JSON.stringify({
         provider: settings.generationProvider,
         models: settings.generationModels,
-        prompt: settings.generationPromptTemplate,
+        prompts: settings.generationPromptTemplates,
     });
 }
 

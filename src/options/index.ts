@@ -541,6 +541,21 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.statusTone = "idle";
     };
 
+    private handleGenerationPromptTemplateChange = (
+        task: keyof ExtensionSettings["generationPromptTemplates"],
+        event: Event,
+    ): void => {
+        const field = event.currentTarget as HTMLTextAreaElement;
+        this.settings = mergeSettings({
+            ...this.settings,
+            generationPromptTemplates: {
+                ...this.settings.generationPromptTemplates,
+                [task]: field.value,
+            },
+        });
+        this.statusTone = "idle";
+    };
+
     private setProvider(provider: GenerationProvider): void {
         this.settings = mergeSettings({
             ...this.settings,
@@ -678,9 +693,15 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="section-divider"></div>
 
             <div class="form-group">
-                <label>自定义 Prompt 模板</label>
-                <textarea class="form-control" name="generationPromptTemplate" .value=${this.settings.generationPromptTemplate} @input=${this.handleFieldChange} placeholder="例如：优先提取工程实践中的判断标准和可复用经验。" rows="4"></textarea>
-                <p class="hint">留空使用默认指令。这里会作为补充指令附加到总览、精读和 Note 生成中。</p>
+                <label>总览 Prompt 模板</label>
+                <textarea class="form-control" .value=${this.settings.generationPromptTemplates.overview} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("overview", event)} placeholder="例如：优先提取判断、结论、是否值得看原视频。" rows="4"></textarea>
+                <p class="hint">作为补充指令附加到 overview 总览生成中。</p>
+            </div>
+
+            <div class="form-group">
+                <label>精读 Prompt 模板</label>
+                <textarea class="form-control" .value=${this.settings.generationPromptTemplates.intensive} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("intensive", event)} placeholder="例如：保留论证链、关键例子和可复用方法。" rows="4"></textarea>
+                <p class="hint">作为补充指令附加到 intensive 精读生成中。Markdown Note 暂时跟随精读 Prompt。</p>
             </div>
         `;
     }
