@@ -5,7 +5,13 @@
       "WebSearch",
       "WebFetch(domain:search.bilibili.com)",
       "WebFetch(domain:api.bilibili.com)",
-      "WebFetch(domain:www.google.com)"
+      "WebFetch(domain:www.google.com)",
+      "Bash(git pull *2)",
+      "Bash(git pull *)",
+      "Bash(set)",
+      "Bash(timeout 10 git fetch --dry-run)",
+      "Bash(timeout 10 git fetch *)",
+      "Bash(git reset *)"
     ]
   },
   "enabledPlugins": {

@@ -3,18 +3,24 @@ import {
     COPY_FORMAT_VALUES,
     DEFAULT_TAB_VALUES,
     DOWNLOAD_FORMAT_VALUES,
-    SUMMARY_ACCESS_MODE_VALUES,
-    SUMMARY_PROVIDER_VALUES,
+    GENERATION_ACCESS_MODE_VALUES,
+    GENERATION_PROVIDER_VALUES,
 } from "./types";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
     defaultTab: "original",
-    summaryEnabled: true,
-    summaryProvider: "deepseek",
-    summaryAccessMode: "api_key",
-    summaryModel: "",
-    summaryApiKey: "",
-    summaryPromptTemplate: "",
+    generationEnabled: true,
+    generationProvider: "deepseek",
+    generationAccessMode: "api_key",
+    generationModels: {
+        overview: "",
+        intensive: "",
+    },
+    generationApiKey: "",
+    generationPromptTemplates: {
+        overview: "",
+        intensive: "",
+    },
     copyFormat: "readable_text",
     downloadFormat: "txt",
 };
@@ -47,26 +53,52 @@ function pickDefaultTab(value: unknown): ExtensionSettings["defaultTab"] {
     return pickEnum(value, DEFAULT_TAB_VALUES, DEFAULT_SETTINGS.defaultTab);
 }
 
+function pickBoolean(value: unknown, fallback: boolean): boolean {
+    return typeof value === "boolean" ? value : fallback;
+}
+
+function pickGenerationModels(raw: Record<string, unknown>): ExtensionSettings["generationModels"] {
+    const models = isRecord(raw.generationModels) ? raw.generationModels : {};
+    const legacyModel = pickString(raw.summaryModel);
+
+    return {
+        overview: pickString(models.overview, legacyModel),
+        intensive: pickString(models.intensive, legacyModel),
+    };
+}
+
+function pickGenerationPromptTemplates(raw: Record<string, unknown>): ExtensionSettings["generationPromptTemplates"] {
+    const templates = isRecord(raw.generationPromptTemplates) ? raw.generationPromptTemplates : {};
+    const legacyPrompt = pickString(raw.generationPromptTemplate, pickString(raw.summaryPromptTemplate));
+
+    return {
+        overview: pickString(templates.overview, legacyPrompt),
+        intensive: pickString(templates.intensive, legacyPrompt),
+    };
+}
+
 export function mergeSettings(value: unknown): ExtensionSettings {
     const raw = isRecord(value) ? value : {};
 
     return {
         defaultTab: pickDefaultTab(raw.defaultTab),
-        summaryEnabled:
-            typeof raw.summaryEnabled === "boolean" ? raw.summaryEnabled : DEFAULT_SETTINGS.summaryEnabled,
-        summaryProvider: pickEnum(
-            raw.summaryProvider,
-            SUMMARY_PROVIDER_VALUES,
-            DEFAULT_SETTINGS.summaryProvider,
+        generationEnabled: pickBoolean(
+            raw.generationEnabled,
+            pickBoolean(raw.summaryEnabled, DEFAULT_SETTINGS.generationEnabled),
         ),
-        summaryAccessMode: pickEnum(
-            raw.summaryAccessMode,
-            SUMMARY_ACCESS_MODE_VALUES,
-            DEFAULT_SETTINGS.summaryAccessMode,
+        generationProvider: pickEnum(
+            raw.generationProvider ?? raw.summaryProvider,
+            GENERATION_PROVIDER_VALUES,
+            DEFAULT_SETTINGS.generationProvider,
         ),
-        summaryModel: pickString(raw.summaryModel),
-        summaryApiKey: pickString(raw.summaryApiKey),
-        summaryPromptTemplate: pickString(raw.summaryPromptTemplate),
+        generationAccessMode: pickEnum(
+            raw.generationAccessMode ?? raw.summaryAccessMode,
+            GENERATION_ACCESS_MODE_VALUES,
+            DEFAULT_SETTINGS.generationAccessMode,
+        ),
+        generationModels: pickGenerationModels(raw),
+        generationApiKey: pickString(raw.generationApiKey, pickString(raw.summaryApiKey)),
+        generationPromptTemplates: pickGenerationPromptTemplates(raw),
         copyFormat: pickEnum(raw.copyFormat, COPY_FORMAT_VALUES, DEFAULT_SETTINGS.copyFormat),
         downloadFormat: pickEnum(raw.downloadFormat, DOWNLOAD_FORMAT_VALUES, DEFAULT_SETTINGS.downloadFormat),
     };

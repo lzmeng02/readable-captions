@@ -13,7 +13,7 @@ type StreamGenerationFromApiOptions = {
     onToken: (partialText: string) => void;
 };
 
-const DEFAULT_LLM_MODEL = "deepseek-v4-flash";
+const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 const DEFAULT_REASONING_EFFORT = "high";
 const DEFAULT_EXTRA_BODY = {
     thinking: {
@@ -114,19 +114,39 @@ const NOTE_PROMPT = `
 - 输出完整 Markdown，不要包裹代码块。
 `.trim();
 
-function resolveEndpoint(provider: ExtensionSettings["summaryProvider"]): string {
+function resolveEndpoint(provider: ExtensionSettings["generationProvider"]): string {
     return provider === "deepseek"
         ? "https://api.deepseek.com/chat/completions"
         : "https://api.openai.com/v1/chat/completions";
 }
 
-function resolveModel(settings: ExtensionSettings): string {
-    const configuredModel = settings.summaryModel.trim();
+function resolveConfiguredModel(settings: ExtensionSettings, task: GenerationTask): string {
+    if (task === "overview") {
+        return settings.generationModels.overview;
+    }
+
+    return settings.generationModels.intensive;
+}
+
+function resolveModel(settings: ExtensionSettings, task: GenerationTask): string {
+    const configuredModel = resolveConfiguredModel(settings, task).trim();
     if (configuredModel.length > 0) {
         return configuredModel;
     }
 
-    return DEFAULT_LLM_MODEL;
+    if (settings.generationProvider === "deepseek") {
+        return DEFAULT_DEEPSEEK_MODEL;
+    }
+
+    throw new Error("OpenAI model is not set. Please configure a model in the extension options.");
+}
+
+function resolvePromptTemplate(settings: ExtensionSettings, task: GenerationTask): string {
+    if (task === "overview") {
+        return settings.generationPromptTemplates.overview;
+    }
+
+    return settings.generationPromptTemplates.intensive;
 }
 
 function getBasePrompt(task: GenerationTask): string {
@@ -140,7 +160,7 @@ function getBasePrompt(task: GenerationTask): string {
 }
 
 function buildSystemPrompt(settings: ExtensionSettings, task: GenerationTask): string {
-    const customPrompt = settings.summaryPromptTemplate.trim();
+    const customPrompt = resolvePromptTemplate(settings, task).trim();
     const basePrompt = getBasePrompt(task);
     if (!customPrompt) {
         return basePrompt;
@@ -271,21 +291,21 @@ function processSseBuffer(buffer: string, onPayload: (payload: unknown) => void)
 }
 
 export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
-    const apiKey = options.settings.summaryApiKey.trim();
+    const apiKey = options.settings.generationApiKey.trim();
     if (!apiKey) {
         throw new Error("API Key is not set. Please configure it in the extension options.");
     }
 
     const messages = buildMessages(options.settings, options.request);
 
-    const response = await fetch(resolveEndpoint(options.settings.summaryProvider), {
+    const response = await fetch(resolveEndpoint(options.settings.generationProvider), {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: resolveModel(options.settings),
+            model: resolveModel(options.settings, options.request.task),
             messages,
             reasoning_effort: DEFAULT_REASONING_EFFORT,
             extra_body: DEFAULT_EXTRA_BODY,
