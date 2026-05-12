@@ -20,9 +20,9 @@ Panel 收敛到三个主要 tab。不要添加用户可见的模式选择（如 
 
 | Key | Label | Responsibility |
 |-----|-------|----------------|
-| `overview` | 总览 | 默认 tab。决策、takeaway、关键片段。帮助判断要不要看视频 |
+| `original` | 原文 | 默认 tab。带时间戳原字幕，查证、搜索、跳转。证据层和导航层 |
 | `intensive` | 精读 | 高信息密度阅读稿，目标是"不看视频也能理解内容" |
-| `original` | 原文 | 带时间戳原字幕，查证、搜索、跳转。证据层和导航层 |
+| `overview` | 总览 | 决策、takeaway、关键片段。帮助判断要不要看视频 |
 
 旧 `summary` tab 合并进 `overview`。旧 `read` tab 是早期段落化实验，不继续扩展。
 

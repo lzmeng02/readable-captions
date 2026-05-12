@@ -91,7 +91,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         shadow.appendChild(styleTag);
     }
 
-    let mode: Mode = "overview";
+    let mode: Mode = "original";
     let generationEnabled = true;
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;

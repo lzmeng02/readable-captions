@@ -581,9 +581,9 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>默认标签页</label>
                 <select class="form-control" name="defaultTab" @change=${this.handleFieldChange}>
-                    <option value="overview" ?selected=${this.settings.defaultTab === 'overview'}>总览</option>
-                    <option value="intensive" ?selected=${this.settings.defaultTab === 'intensive'}>精读</option>
                     <option value="original" ?selected=${this.settings.defaultTab === 'original'}>原文</option>
+                    <option value="intensive" ?selected=${this.settings.defaultTab === 'intensive'}>精读</option>
+                    <option value="overview" ?selected=${this.settings.defaultTab === 'overview'}>总览</option>
                 </select>
                 <p class="hint">打开视频时，面板默认展示的视图。</p>
             </div>
@@ -622,8 +622,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                 </div>
                 <p class="hint">
                     ${this.settings.summaryProvider === 'openai'
-                ? '使用 OpenAI 的 ChatGPT 模型。默认使用 gpt-3.5-turbo。'
-                : '使用 DeepSeek 模型。默认使用 deepseek-chat。'}
+                ? '使用 OpenAI 的 ChatGPT 模型。默认模型仍由请求配置决定。'
+                : '使用 DeepSeek 模型。默认使用 deepseek-v4-flash。'}
                 </p>
             </div>
 
@@ -650,8 +650,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>自定义模型</label>
-                <input class="form-control" type="text" name="summaryModel" .value=${this.settings.summaryModel} @input=${this.handleFieldChange} placeholder="${this.settings.summaryProvider === 'openai' ? 'gpt-4o-mini' : 'deepseek-chat'}" />
-                <p class="hint">留空使用默认模型。可填写如 gpt-4o、deepseek-reasoner 等。</p>
+                <input class="form-control" type="text" name="summaryModel" .value=${this.settings.summaryModel} @input=${this.handleFieldChange} placeholder="deepseek-v4-flash" />
+                <p class="hint">留空使用默认模型 deepseek-v4-flash。可填写其他兼容模型名。</p>
             </div>
 
             <div class="section-divider"></div>

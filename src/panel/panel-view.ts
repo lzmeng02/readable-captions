@@ -433,9 +433,9 @@ export function panelTemplate(
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
-                    ${tab("overview", currentLang === "zh" ? "总览" : "Overview")}
-                    ${tab("intensive", currentLang === "zh" ? "精读" : "Intensive")}
                     ${tab("original", currentLang === "zh" ? "原文" : "Original")}
+                    ${tab("intensive", currentLang === "zh" ? "精读" : "Intensive")}
+                    ${tab("overview", currentLang === "zh" ? "总览" : "Overview")}
                 </nav>
 
                 <main class="content">${content()}</main>
@@ -497,14 +497,14 @@ export const panelStyles = css`
     }
 
     .title {
-        font-size: 16px;
-        font-weight: 500;
+        font-size: 15px;
+        font-weight: 600;
         color: #18191c;
     }
 
     .sub-title {
         font-size: 12px;
-        color: #9499a0;
+        color: #bcc0c5;
         font-weight: 400;
     }
 
@@ -562,7 +562,7 @@ export const panelStyles = css`
         border: 1px solid #e3e5e7;
         border-radius: 8px;
         background: #ffffff;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 4px rgba(0, 0, 0, 0.02);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
         z-index: 100;
         display: flex;
         flex-direction: column;
@@ -629,11 +629,13 @@ export const panelStyles = css`
         color: #61666d;
         cursor: pointer;
         position: relative;
-        transition: color 0.2s;
+        border-radius: 4px 4px 0 0;
+        transition: color 0.2s, background-color 0.2s;
     }
 
     .bili-tabs .tab:hover {
-        color: #00aeec;
+        color: #18191c;
+        background: #f4f5f7;
     }
 
     .bili-tabs .tab.active {
@@ -647,10 +649,11 @@ export const panelStyles = css`
         bottom: -1px;
         left: 50%;
         transform: translateX(-50%);
-        width: 24px;
+        width: 28px;
         height: 2px;
         background: #00aeec;
         border-radius: 2px;
+        transition: width 0.3s ease;
     }
 
     .content {
@@ -681,13 +684,16 @@ export const panelStyles = css`
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 4px 12px 4px;
+        padding: 4px 4px 10px 4px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #f1f2f3;
         gap: 10px;
     }
 
     .meta-info {
-        font-size: 12px;
+        font-size: 11px;
         color: #9499a0;
+        opacity: 0.8;
     }
 
     .meta-divider {
@@ -737,12 +743,12 @@ export const panelStyles = css`
     .line {
         text-align: left;
         border: none;
-        border-radius: 6px;
-        padding: 8px;
+        border-radius: 4px;
+        padding: 10px 12px;
         background: transparent;
         cursor: pointer;
         display: flex;
-        gap: 12px;
+        gap: 16px;
         align-items: baseline;
         transition: background-color 0.2s;
     }
@@ -753,7 +759,9 @@ export const panelStyles = css`
 
     .t {
         display: inline-block;
-        font-size: 12px;
+        min-width: 38px;
+        font-size: 11px;
+        font-weight: 400;
         color: #9499a0;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
@@ -767,8 +775,8 @@ export const panelStyles = css`
     .c {
         flex: 1 1 auto;
         color: #18191c;
-        font-size: 13px;
-        line-height: 1.6;
+        font-size: 14px;
+        line-height: 1.8;
     }
 
     .generation-container {
@@ -797,8 +805,8 @@ export const panelStyles = css`
 
     .generation-desc {
         color: #18191c;
-        font-size: 13px;
-        line-height: 1.6;
+        font-size: 14px;
+        line-height: 1.8;
     }
 
     .markdown-body h1,
@@ -811,6 +819,12 @@ export const panelStyles = css`
         color: #18191c;
     }
 
+    .markdown-body h3 {
+        margin: 20px 0 10px;
+        font-size: 15px;
+        color: #00aeec;
+    }
+
     .markdown-body h1:first-child,
     .markdown-body h2:first-child,
     .markdown-body h3:first-child,
@@ -819,8 +833,9 @@ export const panelStyles = css`
     }
 
     .markdown-body p {
-        margin: 0 0 12px;
-        line-height: 1.6;
+        margin: 0 0 16px;
+        font-size: 14px;
+        line-height: 1.8;
     }
 
     .markdown-body p:last-child {
@@ -829,12 +844,12 @@ export const panelStyles = css`
 
     .markdown-body ul,
     .markdown-body ol {
-        margin: 0 0 12px;
+        margin: 0 0 16px;
         padding-left: 20px;
     }
 
     .markdown-body li {
-        margin-bottom: 4px;
+        margin-bottom: 8px;
     }
 
     .markdown-body strong {
@@ -997,7 +1012,7 @@ export const panelStyles = css`
         border: 1px solid #e3e5e7;
         border-radius: 8px;
         background: #ffffff;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
         overflow: hidden;
     }
 
@@ -1073,8 +1088,8 @@ export const panelStyles = css`
     .note-preview {
         padding: 14px;
         overflow-y: auto;
-        font-size: 13px;
-        line-height: 1.6;
+        font-size: 14px;
+        line-height: 1.8;
         flex: 1;
     }
 
