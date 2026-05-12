@@ -61,7 +61,7 @@
 │  Bilibili Platform Adapter (字幕获取)              │
 ├───────────────────────────────────────────────────┤
 │  chrome.runtime.connect()                         │
-│  → "readable-captions-generation-stream" port      │
+│  → "readable-captions-generation-stream" port     │
 └───────────────────────────────────────────────────┘
                         ↓
 ┌─ Background Service Worker (ES Module) ───────────┐
