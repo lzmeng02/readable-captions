@@ -13,6 +13,14 @@ type StreamSummaryFromApiOptions = {
     onToken: (partialText: string) => void;
 };
 
+const DEFAULT_LLM_MODEL = "deepseek-v4-flash";
+const DEFAULT_REASONING_EFFORT = "high";
+const DEFAULT_EXTRA_BODY = {
+    thinking: {
+        type: "enabled",
+    },
+} as const;
+
 const DEFAULT_SUMMARY_PROMPT =
     "Please summarize the following video transcript. Extract the main points and organize them logically.";
 const DEFAULT_INTENSIVE_PROMPT =
@@ -30,7 +38,7 @@ function resolveModel(settings: ExtensionSettings): string {
         return configuredModel;
     }
 
-    return settings.summaryProvider === "deepseek" ? "deepseek-v4-flash" : "gpt-3.5-turbo";
+    return DEFAULT_LLM_MODEL;
 }
 
 function buildMessages(settings: ExtensionSettings, request: SummaryRequest): ChatMessage[] {
@@ -137,6 +145,8 @@ export async function streamSummaryFromApi(options: StreamSummaryFromApiOptions)
         body: JSON.stringify({
             model: resolveModel(options.settings),
             messages: buildMessages(options.settings, options.request),
+            reasoning_effort: DEFAULT_REASONING_EFFORT,
+            extra_body: DEFAULT_EXTRA_BODY,
             stream: true,
         }),
         signal: options.signal,

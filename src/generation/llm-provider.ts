@@ -34,20 +34,41 @@ function getExtensionChrome(): ExtensionChrome | null {
 }
 
 function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
+    const message = value instanceof Error ? value.message : String(value);
+    if (message.includes("Extension context invalidated")) {
+        return new Error("Extension context was invalidated. Reload this page and try again.");
+    }
+
+    return value instanceof Error ? value : new Error(message);
+}
+
+function connectGenerationPort(): RuntimePort | Error | null {
+    try {
+        return getExtensionChrome()?.runtime?.connect?.({ name: GENERATION_STREAM_PORT }) ?? null;
+    } catch (errorValue) {
+        return toError(errorValue);
+    }
 }
 
 export function streamGeneration(options: StreamingGenerationOptions): AbortController {
     const controller = new AbortController();
-    const port = getExtensionChrome()?.runtime?.connect?.({ name: GENERATION_STREAM_PORT });
+    const portOrError = connectGenerationPort();
 
-    if (!port) {
+    if (!portOrError) {
         queueMicrotask(() => {
             options.onError(new Error("Extension runtime is unavailable. Reload the extension and try again."));
         });
         return controller;
     }
 
+    if (portOrError instanceof Error) {
+        queueMicrotask(() => {
+            options.onError(portOrError);
+        });
+        return controller;
+    }
+
+    const port = portOrError;
     let finished = false;
 
     const disconnectPort = (): void => {

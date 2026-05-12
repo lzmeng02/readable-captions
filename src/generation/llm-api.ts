@@ -13,12 +13,22 @@ type StreamGenerationFromApiOptions = {
     onToken: (partialText: string) => void;
 };
 
+const DEFAULT_LLM_MODEL = "deepseek-v4-flash";
+const DEFAULT_REASONING_EFFORT = "high";
+const DEFAULT_EXTRA_BODY = {
+    thinking: {
+        type: "enabled",
+    },
+} as const;
+
 const GENERATOR_PROMPT = `
 你是 Readable Captions 的 Overview 生成器。
 
 我会给你视频标题、简介和带时间戳的字幕。
 
 你的任务：提取这个视频中对用户最重要、最有用的信息，帮助用户节省观看时间。目标是：如果用户只想拿结论或操作路径，看完 Overview 就可以不看原视频。
+用户的阅读窗口极小，每行最多只能显示 30 个中文字符。为了保证可读性，把信息切成小段落，每段控制在 2-3 行（60-90 字）以内。
+
 
 输出三部分：
 
@@ -28,11 +38,11 @@ const GENERATOR_PROMPT = `
 
 不要写“这个视频讲了什么”，而要写“看完这个视频你应该知道什么 / 能做什么”。
 
-如果视频有反直觉信息、明确结论、风险提示、购买/使用建议、可迁移经验、操作路径或行动含义，优先放在 TL;DR 里。
+如果视频有反直觉信息、明确结论、风险提示、购买/使用建议、可迁移经验、操作路径或行动含义，优先放在 TL;DR 里。保持简洁短小，减少用户阅读压力。
 
 ## 要点 / 步骤
 
-列出 3-5 条用户最该知道的信息。
+列出 3-5 条用户最该知道的信息。如果是长视频，允许超过5条。
 
 要求：
 - 每条必须具体、短小、容易理解。
@@ -55,7 +65,7 @@ const GENERATOR_PROMPT = `
 
 ## 时间戳
 
-列出 3-5 个最值得回看的片段。
+列出 3-5 个最值得回看的片段。如果是长教程，允许超过5条。
 
 格式：
 - [mm:ss] 简短标题：为什么值得看
@@ -74,6 +84,7 @@ const GENERATOR_PROMPT = `
 - 不要暴露内部类型判断，例如“这是教程类视频所以……”。
 - 不要输出任何开场白、问候语、确认语或过渡文字。
 - 输出只用 Markdown，不要包裹代码块。
+- 字幕可能来自语音转写，包含同音误识别。请根据上下文修正常见技术名词。
 `.trim();
 
 const INTENSIVE_PROMPT = `
@@ -115,7 +126,7 @@ function resolveModel(settings: ExtensionSettings): string {
         return configuredModel;
     }
 
-    return settings.summaryProvider === "deepseek" ? "deepseek-v4-flash" : "gpt-3.5-turbo";
+    return DEFAULT_LLM_MODEL;
 }
 
 function getBasePrompt(task: GenerationTask): string {
@@ -276,6 +287,8 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
         body: JSON.stringify({
             model: resolveModel(options.settings),
             messages,
+            reasoning_effort: DEFAULT_REASONING_EFFORT,
+            extra_body: DEFAULT_EXTRA_BODY,
             stream: true,
         }),
         signal: options.signal,
