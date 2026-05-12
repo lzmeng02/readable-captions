@@ -8,9 +8,9 @@ import {
 } from "./types";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-    defaultTab: "overview",
+    defaultTab: "original",
     summaryEnabled: true,
-    summaryProvider: "openai",
+    summaryProvider: "deepseek",
     summaryAccessMode: "api_key",
     summaryModel: "",
     summaryApiKey: "",
