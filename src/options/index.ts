@@ -3,7 +3,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
 import { getSettings, saveSettings } from "../settings/storage";
-import type { ExtensionSettings } from "../settings/types";
+import type { ExtensionSettings, GenerationProvider } from "../settings/types";
 
 type TabId = "general" | "generation" | "export" | "about";
 
@@ -529,16 +529,28 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.statusTone = "idle";
     };
 
-    private setProvider(provider: string): void {
+    private handleGenerationModelChange = (task: keyof ExtensionSettings["generationModels"], event: Event): void => {
+        const field = event.currentTarget as HTMLInputElement;
         this.settings = mergeSettings({
             ...this.settings,
-            summaryProvider: provider,
+            generationModels: {
+                ...this.settings.generationModels,
+                [task]: field.value,
+            },
+        });
+        this.statusTone = "idle";
+    };
+
+    private setProvider(provider: GenerationProvider): void {
+        this.settings = mergeSettings({
+            ...this.settings,
+            generationProvider: provider,
         });
         this.statusTone = "idle";
     }
 
     private handleReset(): void {
-        this.settings = { ...DEFAULT_SETTINGS };
+        this.settings = mergeSettings(DEFAULT_SETTINGS);
         this.statusTone = "idle";
     }
 
@@ -596,7 +608,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     <p class="toggle-desc">用于总览、精读和 Markdown Note 生成。关闭后仍可查看原文字幕。</p>
                 </div>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="summaryEnabled" ?checked=${this.settings.summaryEnabled} @change=${this.handleFieldChange} />
+                    <input type="checkbox" name="generationEnabled" ?checked=${this.settings.generationEnabled} @change=${this.handleFieldChange} />
                     <span class="toggle-slider"></span>
                 </label>
             </div>
@@ -604,7 +616,10 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     }
 
     private renderGeneration() {
-        const isApiKeySet = this.settings.summaryApiKey.length > 0;
+        const isApiKeySet = this.settings.generationApiKey.length > 0;
+        const modelPlaceholder = this.settings.generationProvider === "openai"
+            ? "gpt-4o-mini"
+            : "deepseek-v4-flash";
 
         return html`
             <h2 class="section-title">AI 生成引擎</h2>
@@ -613,16 +628,16 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>模型提供商</label>
                 <div class="provider-badges">
-                    <button class="provider-badge ${this.settings.summaryProvider === 'openai' ? 'active' : ''}" @click=${() => this.setProvider('openai')}>
+                    <button class="provider-badge ${this.settings.generationProvider === 'openai' ? 'active' : ''}" @click=${() => this.setProvider('openai')}>
                         OpenAI
                     </button>
-                    <button class="provider-badge ${this.settings.summaryProvider === 'deepseek' ? 'active' : ''}" @click=${() => this.setProvider('deepseek')}>
+                    <button class="provider-badge ${this.settings.generationProvider === 'deepseek' ? 'active' : ''}" @click=${() => this.setProvider('deepseek')}>
                         DeepSeek
                     </button>
                 </div>
                 <p class="hint">
-                    ${this.settings.summaryProvider === 'openai'
-                ? '使用 OpenAI 的 ChatGPT 模型。默认模型仍由请求配置决定。'
+                    ${this.settings.generationProvider === 'openai'
+                ? '使用 OpenAI API。请在下方为总览和精读填写明确模型名。'
                 : '使用 DeepSeek 模型。默认使用 deepseek-v4-flash。'}
                 </p>
             </div>
@@ -633,7 +648,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     ${isApiKeySet ? html`<span style="font-size: 12px; color: var(--success);">● 已配置</span>` : html`<span style="font-size: 12px; color: var(--warning);">○ 未配置</span>`}
                 </div>
                 <div class="api-key-wrapper">
-                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="summaryApiKey" .value=${this.settings.summaryApiKey} @input=${this.handleFieldChange} placeholder="${this.settings.summaryProvider === 'openai' ? 'sk-...' : 'sk-...'}" />
+                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${this.settings.generationApiKey} @input=${this.handleFieldChange} placeholder="${this.settings.generationProvider === 'openai' ? 'sk-...' : 'sk-...'}" />
                     <button class="toggle-visibility-btn" @click=${() => this.showApiKey = !this.showApiKey} title="${this.showApiKey ? '隐藏' : '显示'}">
                         ${this.showApiKey
                 ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
@@ -642,23 +657,29 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     </button>
                 </div>
                 <p class="hint">
-                    ${this.settings.summaryProvider === 'openai'
+                    ${this.settings.generationProvider === 'openai'
                 ? html`前往 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a> 获取 API Key。`
                 : html`前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek Platform</a> 获取 API Key。`}
                 </p>
             </div>
 
             <div class="form-group">
-                <label>自定义模型</label>
-                <input class="form-control" type="text" name="summaryModel" .value=${this.settings.summaryModel} @input=${this.handleFieldChange} placeholder="deepseek-v4-flash" />
-                <p class="hint">留空使用默认模型 deepseek-v4-flash。可填写其他兼容模型名。</p>
+                <label>总览模型</label>
+                <input class="form-control" type="text" .value=${this.settings.generationModels.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${modelPlaceholder} />
+                <p class="hint">用于生成 overview 总览。DeepSeek 可留空使用默认模型；OpenAI 需要填写。</p>
+            </div>
+
+            <div class="form-group">
+                <label>精读模型</label>
+                <input class="form-control" type="text" .value=${this.settings.generationModels.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${modelPlaceholder} />
+                <p class="hint">用于生成 intensive 精读稿。Markdown Note 暂时跟随精读模型。</p>
             </div>
 
             <div class="section-divider"></div>
 
             <div class="form-group">
                 <label>自定义 Prompt 模板</label>
-                <textarea class="form-control" name="summaryPromptTemplate" .value=${this.settings.summaryPromptTemplate} @input=${this.handleFieldChange} placeholder="例如：优先提取工程实践中的判断标准和可复用经验。" rows="4"></textarea>
+                <textarea class="form-control" name="generationPromptTemplate" .value=${this.settings.generationPromptTemplate} @input=${this.handleFieldChange} placeholder="例如：优先提取工程实践中的判断标准和可复用经验。" rows="4"></textarea>
                 <p class="hint">留空使用默认指令。这里会作为补充指令附加到总览、精读和 Note 生成中。</p>
             </div>
         `;

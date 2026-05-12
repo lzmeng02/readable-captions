@@ -5,7 +5,7 @@ import type { Transcript } from "../transcript/model";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { getSettings, watchSettings } from "../settings/storage";
-import type { DefaultTab } from "../settings/types";
+import type { DefaultTab, ExtensionSettings } from "../settings/types";
 import {
     copyMarkdownNote,
     copyTranscript,
@@ -51,6 +51,14 @@ function resolveInitialMode(defaultTab: DefaultTab): Mode {
     return defaultTab;
 }
 
+function getGenerationSettingsKey(settings: ExtensionSettings): string {
+    return JSON.stringify({
+        provider: settings.generationProvider,
+        models: settings.generationModels,
+        prompt: settings.generationPromptTemplate,
+    });
+}
+
 function createGenerationState(): GenerationState {
     return {
         text: null,
@@ -93,6 +101,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
     let mode: Mode = "original";
     let generationEnabled = true;
+    let generationSettingsKey = "";
+    let hasUserSelectedMode = false;
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
@@ -293,7 +303,11 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         ), shadow);
     };
 
-    const setMode = (nextMode: Mode): void => {
+    const setMode = (nextMode: Mode, userSelected = false): void => {
+        if (userSelected && nextMode !== mode) {
+            hasUserSelectedMode = true;
+        }
+
         mode = nextMode;
         if (maybeGenerateForMode()) {
             return;
@@ -308,7 +322,9 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
                 return;
             }
 
-            generationEnabled = settings.summaryEnabled;
+            generationEnabled = settings.generationEnabled;
+            generationSettingsKey = getGenerationSettingsKey(settings);
+            hasUserSelectedMode = false;
             mode = resolveInitialMode(settings.defaultTab);
 
             if (!generationEnabled) {
@@ -329,12 +345,31 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         }
 
         const wasEnabled = generationEnabled;
-        generationEnabled = settings.summaryEnabled;
+        const nextGenerationSettingsKey = getGenerationSettingsKey(settings);
+        const generationSettingsChanged = generationSettingsKey !== nextGenerationSettingsKey;
+        const nextDefaultMode = resolveInitialMode(settings.defaultTab);
+
+        generationEnabled = settings.generationEnabled;
+        generationSettingsKey = nextGenerationSettingsKey;
+
+        if (!hasUserSelectedMode) {
+            mode = nextDefaultMode;
+        }
 
         if (!generationEnabled) {
             clearAllGenerationStates();
-        } else if (!wasEnabled && !maybeGenerateForMode()) {
-            renderPanel();
+        } else if (generationSettingsChanged) {
+            clearAllGenerationStates();
+            if (!maybeGenerateForMode()) {
+                renderPanel();
+            }
+            return;
+        } else if (!wasEnabled) {
+            if (!maybeGenerateForMode()) {
+                renderPanel();
+            }
+            return;
+        } else if (maybeGenerateForMode()) {
             return;
         }
 

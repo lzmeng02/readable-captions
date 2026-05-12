@@ -24,7 +24,7 @@ Panel 收敛到三个主要 tab。不要添加用户可见的模式选择（如 
 | `intensive` | 精读 | 高信息密度阅读稿，目标是"不看视频也能理解内容" |
 | `overview` | 总览 | 决策、takeaway、关键片段。帮助判断要不要看视频 |
 
-旧 `summary` tab 合并进 `overview`。旧 `read` tab 是早期段落化实验，不继续扩展。
+旧版摘要 tab 已合并进 `overview`。旧 `read` tab 是早期段落化实验，不继续扩展。
 
 ### Overview
 
@@ -43,7 +43,7 @@ UI 固定，内容自适应。
 
 "Read instead of watch" tab。把 transcript 重写成高信息密度阅读稿，保留视频大致展开顺序，去掉：口头禅、重复表达、无意义寒暄、跑题内容、自我纠正、不清楚的口语表达。
 
-Intensive 不是普通 summary。目标是视频适合文字替代时，不看视频也能理解内容。
+Intensive 不是普通摘要。目标是视频适合文字替代时，不看视频也能理解内容。
 
 ### Original
 
@@ -66,7 +66,7 @@ Note 不应只是复制 overview 或 intensive。适合保存到 Obsidian、Noti
 
 主 prompt 原则：帮用户节省观看时间。优先输出：用户最想立刻知道的结论、是否需要看原视频、有价值的时间戳、可复用 takeaway/经验/判断/知识点、具体例子和依据。
 
-避免："本视频介绍了……" 泛泛 summary、overview 机械跟随 transcript 顺序、空泛抽象。
+避免："本视频介绍了……" 泛泛摘要、overview 机械跟随 transcript 顺序、空泛抽象。
 
 ## UI Philosophy
 

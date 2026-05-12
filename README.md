@@ -98,7 +98,6 @@ src/
 ├── settings/                       # chrome.storage.local 封装
 ├── platforms/                      # 平台适配器（目前仅 bilibili）
 ├── generation/                     # LLM 流式生成（协议、API、provider）
-├── summary/                        # 旧版 summary 实现，不再扩展
 └── transcript/                     # TranscriptLine 模型
 ```
 

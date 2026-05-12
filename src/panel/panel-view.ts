@@ -30,7 +30,7 @@ let isMenuOpen = false;
 
 export function panelTemplate(
     mode: Mode,
-    setMode: (m: Mode) => void,
+    setMode: (m: Mode, userSelected?: boolean) => void,
     data: {
         transcript: TranscriptLine[] | null;
         source: string;
@@ -88,7 +88,7 @@ export function panelTemplate(
     const tab = (id: Mode, label: string) => {
         const active = mode === id;
         return html`
-            <button class="tab ${active ? "active" : ""}" @click=${() => setMode(id)}>
+            <button class="tab ${active ? "active" : ""}" @click=${() => setMode(id, true)}>
                 ${label}
             </button>
         `;
