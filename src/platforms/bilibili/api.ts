@@ -5,6 +5,7 @@ export type BilibiliSubtitleItem = {
 
 type BilibiliViewInfo = {
     aid?: number;
+    bvid?: string;
     cid?: number;
     subtitleUrl?: string;
     availableSubtitles?: BilibiliSubtitleItem[];
@@ -47,6 +48,22 @@ function normalizeUrl(url: string): string {
     return url.replace(/^http:/, "https:");
 }
 
+function isBilibiliHost(hostname: string): boolean {
+    return hostname === "bilibili.com" || hostname.endsWith(".bilibili.com");
+}
+
+function normalizePathVideoId(id: string | undefined): string | null {
+    if (!id) return null;
+    if (/^BV[0-9A-Za-z]+$/.test(id)) return id;
+    if (/^av\d+$/i.test(id)) return `av${id.slice(2)}`;
+    return null;
+}
+
+function normalizeAidVideoId(id: string | null): string | null {
+    if (!id || !/^\d+$/.test(id)) return null;
+    return `av${id}`;
+}
+
 function shouldIncludeCookies(url: string): boolean {
     return new URL(url).hostname === "api.bilibili.com";
 }
@@ -81,8 +98,32 @@ function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
 }
 
 export function getBiliVideoId(url: string): string | null {
-    const match = url.match(/bilibili\.com\/video\/(\w+)\//);
-    return match ? match[1] : null;
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return null;
+    }
+
+    if (!isBilibiliHost(parsed.hostname)) {
+        return null;
+    }
+
+    const videoPathMatch = parsed.pathname.match(/^\/video\/([^/]+)/);
+    const pathId = normalizePathVideoId(videoPathMatch?.[1]);
+    if (pathId) return pathId;
+
+    const queryBvid = normalizePathVideoId(parsed.searchParams.get("bvid") ?? undefined);
+    if (queryBvid?.startsWith("BV")) return queryBvid;
+
+    const queryAid = normalizeAidVideoId(parsed.searchParams.get("aid") ?? parsed.searchParams.get("avid"));
+    if (queryAid) return queryAid;
+
+    if (parsed.pathname === "/list/watchlater") {
+        return normalizeAidVideoId(parsed.searchParams.get("oid"));
+    }
+
+    return null;
 }
 
 export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliViewInfo | null> {
@@ -103,6 +144,7 @@ export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliV
     const data = getNestedRecord(root, "data") ?? {};
 
     const aid = readNumber(data, "aid");
+    const bvid = readString(data, "bvid");
     const pages = getArray(data, "pages");
     const pageIndex = getBiliPart(videoUrl) - 1;
     const page = asRecord(pages[pageIndex]) ?? asRecord(pages[0]) ?? {};
@@ -113,12 +155,16 @@ export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliV
     const availableSubtitles = getSubtitleItems(subtitleList);
     const subtitleUrl = availableSubtitles.length > 0 ? availableSubtitles[0].subtitle_url : undefined;
 
-    return { aid, cid, subtitleUrl, availableSubtitles };
+    return { aid, bvid, cid, subtitleUrl, availableSubtitles };
 }
 
-export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number): Promise<BilibiliSubtitleItem[]> {
+export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number, bvid?: string): Promise<BilibiliSubtitleItem[]> {
     const wbi = new URL("https://api.bilibili.com/x/player/wbi/v2");
-    wbi.searchParams.set("aid", String(aid));
+    if (bvid) {
+        wbi.searchParams.set("bvid", bvid);
+    } else {
+        wbi.searchParams.set("aid", String(aid));
+    }
     wbi.searchParams.set("cid", String(cid));
     wbi.searchParams.set("_t", String(Date.now()));
 

@@ -18,7 +18,7 @@ export async function getBilibiliTranscript(url: string): Promise<PlatformTransc
         return { transcript: null, source: "none" };
     }
 
-    const { aid, cid, subtitleUrl: viewSubtitleUrl, availableSubtitles: viewAvailableSubtitles } = viewInfo;
+    const { aid, bvid, cid, subtitleUrl: viewSubtitleUrl, availableSubtitles: viewAvailableSubtitles } = viewInfo;
 
     if (typeof viewSubtitleUrl === "string" && viewSubtitleUrl.length > 0) {
         const { subtitleUrl, body } = await fetchBilibiliSubtitleBody(viewSubtitleUrl);
@@ -33,8 +33,8 @@ export async function getBilibiliTranscript(url: string): Promise<PlatformTransc
         };
     }
 
-    if (aid && cid) {
-        const aiSubtitles = await fetchBilibiliAiSubtitleUrl(aid, cid);
+    if (typeof aid === "number" && typeof cid === "number") {
+        const aiSubtitles = await fetchBilibiliAiSubtitleUrl(aid, cid, bvid);
 
         if (aiSubtitles && aiSubtitles.length > 0) {
             const mainSub = aiSubtitles.find(s => s.subtitle_url.includes("aisubtitle.hdslb.com") || s.subtitle_url.includes("/bfs/ai_subtitle/")) || aiSubtitles[0];
@@ -57,7 +57,7 @@ export async function getBilibiliTranscript(url: string): Promise<PlatformTransc
 export const bilibiliAdapter: PlatformAdapter = {
     platformId: "bilibili",
     matches(url: string): boolean {
-        return /bilibili\.com\/video\//.test(url);
+        return getBiliVideoId(url) !== null;
     },
     getTranscript: getBilibiliTranscript,
 };
