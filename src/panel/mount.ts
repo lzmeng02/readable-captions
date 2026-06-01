@@ -8,8 +8,10 @@ import { getSettings, watchSettings } from "../settings/storage";
 import type { DefaultTab, ExtensionSettings } from "../settings/types";
 import {
     copyMarkdownNote,
+    copyMarkdownText,
     copyTranscript,
     downloadMarkdownNote,
+    downloadMarkdownText,
     downloadTranscript,
 } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
@@ -86,6 +88,10 @@ function buildGenerationMetadata(data: PanelData): GenerationMetadata {
     };
 }
 
+function getGenerationFileSuffix(mode: Exclude<Mode, "original">): string {
+    return mode === "overview" ? "overview" : "intensive";
+}
+
 export function mountPanel(host: HTMLElement, data: PanelData): void {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
@@ -106,6 +112,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
+    let copyFormat: ExtensionSettings["copyFormat"] = "readable_text";
+    let downloadFormat: ExtensionSettings["downloadFormat"] = "txt";
 
     const generationStates: Record<GenerationTask, GenerationState> = {
         overview: createGenerationState(),
@@ -233,15 +241,27 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     const handleCopy = async (): Promise<void> => {
+        if (isPanelGenerationMode(mode)) {
+            const text = generationStates[mode].text;
+            if (!text) return;
+            await copyMarkdownText(text);
+            return;
+        }
+
         if (!data.transcript || data.transcript.length === 0) return;
-        const settings = await getSettings();
-        await copyTranscript(data.transcript, settings.copyFormat);
+        await copyTranscript(data.transcript, copyFormat);
     };
 
-    const handleDownload = async (): Promise<void> => {
+    const handleDownload = (): void => {
+        if (isPanelGenerationMode(mode)) {
+            const text = generationStates[mode].text;
+            if (!text) return;
+            downloadMarkdownText(text, extractVideoTitle(), getGenerationFileSuffix(mode));
+            return;
+        }
+
         if (!data.transcript || data.transcript.length === 0) return;
-        const settings = await getSettings();
-        downloadTranscript(data.transcript, settings.downloadFormat, extractVideoTitle());
+        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle());
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
@@ -324,6 +344,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
             generationEnabled = settings.generationEnabled;
             generationSettingsKey = getGenerationSettingsKey(settings);
+            copyFormat = settings.copyFormat;
+            downloadFormat = settings.downloadFormat;
             hasUserSelectedMode = false;
             mode = resolveInitialMode(settings.defaultTab);
 
@@ -351,6 +373,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
 
         generationEnabled = settings.generationEnabled;
         generationSettingsKey = nextGenerationSettingsKey;
+        copyFormat = settings.copyFormat;
+        downloadFormat = settings.downloadFormat;
 
         if (!hasUserSelectedMode) {
             mode = nextDefaultMode;

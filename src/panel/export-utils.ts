@@ -42,11 +42,58 @@ export function generateTextContent(transcript: Transcript, format: "readable" |
 export async function copyTranscript(transcript: Transcript, format: CopyFormat): Promise<void> {
     const textType = format === "timestamped_text" ? "timestamped" : "readable";
     const content = generateTextContent(transcript, textType);
-    await navigator.clipboard.writeText(content);
+    await writeClipboardText(content);
+}
+
+export async function copyMarkdownText(markdown: string): Promise<void> {
+    await writeClipboardText(markdown);
 }
 
 export async function copyMarkdownNote(markdown: string): Promise<void> {
-    await navigator.clipboard.writeText(markdown);
+    await copyMarkdownText(markdown);
+}
+
+async function writeClipboardText(content: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(content);
+            return;
+        } catch (err) {
+            console.warn("Clipboard API failed, falling back to execCommand", err);
+        }
+    }
+
+    fallbackCopyText(content);
+}
+
+function fallbackCopyText(content: string): void {
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "0";
+    textarea.style.width = "1px";
+    textarea.style.height = "1px";
+    textarea.style.opacity = "0";
+
+    const selection = document.getSelection();
+    const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+
+    if (previousRange && selection) {
+        selection.removeAllRanges();
+        selection.addRange(previousRange);
+    }
+
+    if (!copied) {
+        throw new Error("Failed to copy text to clipboard.");
+    }
 }
 
 function downloadTextFile(content: string, title: string, extension: string, mimeType: string): void {
@@ -58,10 +105,12 @@ function downloadTextFile(content: string, title: string, extension: string, mim
     const a = document.createElement("a");
     a.href = url;
     a.download = `${safeTitle}.${extension}`;
-    document.body.appendChild(a);
+    a.rel = "noopener";
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+    }, 30000);
 }
 
 export function downloadTranscript(transcript: Transcript, format: DownloadFormat, title: string): void {
@@ -82,6 +131,11 @@ export function downloadTranscript(transcript: Transcript, format: DownloadForma
     downloadTextFile(content, title, extension, mimeType);
 }
 
+export function downloadMarkdownText(markdown: string, title: string, suffix?: string): void {
+    const fileTitle = suffix ? `${title}_${suffix}` : title;
+    downloadTextFile(markdown, fileTitle, "md", "text/markdown");
+}
+
 export function downloadMarkdownNote(markdown: string, title: string): void {
-    downloadTextFile(markdown, `${title}_note`, "md", "text/markdown");
+    downloadMarkdownText(markdown, title, "note");
 }
