@@ -4,12 +4,14 @@ import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
-import { getSettings, watchSettings } from "../settings/storage";
-import type { DefaultTab, ExtensionSettings } from "../settings/types";
+import { watchPublicSettings } from "../settings/public-client";
+import type { PublicExtensionSettings } from "../settings/types";
 import {
     copyMarkdownNote,
+    copyMarkdownText,
     copyTranscript,
     downloadMarkdownNote,
+    downloadMarkdownText,
     downloadTranscript,
 } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
@@ -47,16 +49,8 @@ async function openExtensionOptionsPage(): Promise<void> {
     }
 }
 
-function resolveInitialMode(defaultTab: DefaultTab): Mode {
+function resolveInitialMode(defaultTab: PublicExtensionSettings["defaultTab"]): Mode {
     return defaultTab;
-}
-
-function getGenerationSettingsKey(settings: ExtensionSettings): string {
-    return JSON.stringify({
-        provider: settings.generationProvider,
-        models: settings.generationModels,
-        prompts: settings.generationPromptTemplates,
-    });
 }
 
 function createGenerationState(): GenerationState {
@@ -86,6 +80,10 @@ function buildGenerationMetadata(data: PanelData): GenerationMetadata {
     };
 }
 
+function getGenerationFileSuffix(mode: Exclude<Mode, "original">): string {
+    return mode === "overview" ? "overview" : "intensive";
+}
+
 export function mountPanel(host: HTMLElement, data: PanelData): void {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
@@ -106,6 +104,9 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
+    let hasLoadedSettings = false;
+    let copyFormat: PublicExtensionSettings["copyFormat"] = "readable_text";
+    let downloadFormat: PublicExtensionSettings["downloadFormat"] = "txt";
 
     const generationStates: Record<GenerationTask, GenerationState> = {
         overview: createGenerationState(),
@@ -233,15 +234,27 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     const handleCopy = async (): Promise<void> => {
+        if (isPanelGenerationMode(mode)) {
+            const text = generationStates[mode].text;
+            if (!text) return;
+            await copyMarkdownText(text);
+            return;
+        }
+
         if (!data.transcript || data.transcript.length === 0) return;
-        const settings = await getSettings();
-        await copyTranscript(data.transcript, settings.copyFormat);
+        await copyTranscript(data.transcript, copyFormat);
     };
 
-    const handleDownload = async (): Promise<void> => {
+    const handleDownload = (): void => {
+        if (isPanelGenerationMode(mode)) {
+            const text = generationStates[mode].text;
+            if (!text) return;
+            downloadMarkdownText(text, extractVideoTitle(), getGenerationFileSuffix(mode));
+            return;
+        }
+
         if (!data.transcript || data.transcript.length === 0) return;
-        const settings = await getSettings();
-        downloadTranscript(data.transcript, settings.downloadFormat, extractVideoTitle());
+        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle());
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
@@ -315,44 +328,26 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         renderPanel();
     };
 
-    const loadPanelSettings = async (): Promise<void> => {
-        try {
-            const settings = await getSettings();
-            if (isDisposed) {
-                return;
-            }
-
-            generationEnabled = settings.generationEnabled;
-            generationSettingsKey = getGenerationSettingsKey(settings);
-            hasUserSelectedMode = false;
-            mode = resolveInitialMode(settings.defaultTab);
-
-            if (!generationEnabled) {
-                clearAllGenerationStates();
-            }
-
-            if (!maybeGenerateForMode()) {
-                renderPanel();
-            }
-        } catch {
-            renderPanel();
-        }
-    };
-
-    stopWatchingSettings = watchSettings((settings) => {
+    const applyPanelSettings = (settings: PublicExtensionSettings): void => {
         if (isDisposed) {
             return;
         }
 
         const wasEnabled = generationEnabled;
-        const nextGenerationSettingsKey = getGenerationSettingsKey(settings);
-        const generationSettingsChanged = generationSettingsKey !== nextGenerationSettingsKey;
+        const nextGenerationSettingsKey = settings.generationSettingsKey;
+        const generationSettingsChanged = hasLoadedSettings && generationSettingsKey !== nextGenerationSettingsKey;
         const nextDefaultMode = resolveInitialMode(settings.defaultTab);
 
         generationEnabled = settings.generationEnabled;
         generationSettingsKey = nextGenerationSettingsKey;
+        copyFormat = settings.copyFormat;
+        downloadFormat = settings.downloadFormat;
 
-        if (!hasUserSelectedMode) {
+        if (!hasLoadedSettings) {
+            hasLoadedSettings = true;
+            hasUserSelectedMode = false;
+            mode = nextDefaultMode;
+        } else if (!hasUserSelectedMode) {
             mode = nextDefaultMode;
         }
 
@@ -374,7 +369,9 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         }
 
         renderPanel();
-    });
+    };
+
+    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
 
     const toggleLang = (): void => {
         uiLanguage = uiLanguage === "zh" ? "en" : "zh";
@@ -400,5 +397,4 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     renderPanel();
-    void loadPanelSettings();
 }

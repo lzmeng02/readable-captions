@@ -48,6 +48,8 @@ render partial markdown
 ```
 
 - API keys 在 `chrome.storage.local`，由 background 读取
+- Background 调用 `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`，content script 不直接读取完整 settings
+- Content script 只通过 `readable-captions-public-settings` runtime port 接收不含 `generationApiKey` 的 `PublicExtensionSettings`
 - Background proxy 是有意设计 — MV3 service worker 的 host permissions 比 content script 更可靠
 - AI generation 目前支持 `overview`、`intensive`、`note` 三类任务。后续 planner JSON 也应继续放在通用 generation/llm 命名下。
 
@@ -58,8 +60,9 @@ render partial markdown
 - `types.ts` — `ExtensionSettings` 类型 + enum 常量数组
 - `defaults.ts` — 默认值 + `mergeSettings()` 校验
 - `storage.ts` — `getSettings()`, `saveSettings()`, `watchSettings()`
+- `public.ts` / `public-client.ts` — 面向 content script 的 sanitized settings bridge，不包含 `generationApiKey`
 
-`watchSettings()` 封装 `chrome.storage.onChanged`，content script panel 可实时响应 options page 变化。
+`watchSettings()` 封装 `chrome.storage.onChanged`，background/options 可实时响应 options page 变化。content script panel 使用 `watchPublicSettings()`。
 
 **不要在别处直接调 `chrome.storage.local`。**
 

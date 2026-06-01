@@ -16,6 +16,10 @@ type StorageChange = {
 type ExtensionStorageArea = {
     get(keys: string | string[], callback: (items: StorageItems) => void): void;
     set(items: StorageItems, callback: () => void): void;
+    setAccessLevel?(
+        accessOptions: { accessLevel: "TRUSTED_CONTEXTS" | "TRUSTED_AND_UNTRUSTED_CONTEXTS" },
+        callback?: () => void,
+    ): void | Promise<void>;
 };
 
 type ExtensionStorageOnChanged = {
@@ -84,6 +88,32 @@ export async function saveSettings(settings: ExtensionSettings): Promise<Extensi
 
             resolve(nextSettings);
         });
+    });
+}
+
+export async function restrictStorageAccessToTrustedContexts(): Promise<void> {
+    const extensionChrome = getExtensionChrome();
+    const storage = getStorageArea();
+    const setAccessLevel = storage?.setAccessLevel;
+    if (!setAccessLevel) {
+        return;
+    }
+
+    return new Promise((resolve, reject) => {
+        const complete = (): void => {
+            const errorMessage = getLastErrorMessage(extensionChrome);
+            if (errorMessage) {
+                reject(new Error(errorMessage));
+                return;
+            }
+
+            resolve();
+        };
+
+        const result = setAccessLevel.call(storage, { accessLevel: "TRUSTED_CONTEXTS" }, complete);
+        if (result instanceof Promise) {
+            result.then(complete, reject);
+        }
     });
 }
 
