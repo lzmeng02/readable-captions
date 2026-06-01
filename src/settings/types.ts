@@ -31,3 +31,10 @@ export type ExtensionSettings = {
     copyFormat: CopyFormat;
     downloadFormat: DownloadFormat;
 };
+
+export type PublicExtensionSettings = Pick<
+    ExtensionSettings,
+    "defaultTab" | "generationEnabled" | "copyFormat" | "downloadFormat"
+> & {
+    generationSettingsKey: string;
+};

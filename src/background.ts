@@ -1,4 +1,8 @@
-import { getSettings } from "./settings/storage";
+import {
+    getSettings,
+    restrictStorageAccessToTrustedContexts,
+    watchSettings,
+} from "./settings/storage";
 import { streamGenerationFromApi } from "./generation/llm-api";
 import {
     GENERATION_STREAM_PORT,
@@ -7,6 +11,11 @@ import {
     type GenerationStreamBackgroundMessage,
 } from "./generation/protocol";
 import type { GenerationRequest } from "./generation/types";
+import {
+    PUBLIC_SETTINGS_PORT,
+    toPublicSettings,
+    type PublicSettingsPortMessage,
+} from "./settings/public";
 
 type RuntimePort = {
     name: string;
@@ -45,6 +54,45 @@ function toError(value: unknown): Error {
     return value instanceof Error ? value : new Error(String(value));
 }
 
+function postPublicSettingsToPort(port: RuntimePort, message: PublicSettingsPortMessage): void {
+    try {
+        port.postMessage(message);
+    } catch {
+        // The content script may have navigated away while the stream was active.
+    }
+}
+
+void restrictStorageAccessToTrustedContexts().catch((err) => {
+    console.warn("Failed to restrict extension storage access", err);
+});
+
+const publicSettingsPorts = new Set<RuntimePort>();
+
+async function postCurrentPublicSettings(port: RuntimePort): Promise<void> {
+    try {
+        const settings = await getSettings();
+        postPublicSettingsToPort(port, {
+            type: "settings",
+            settings: toPublicSettings(settings),
+        });
+    } catch (errorValue) {
+        postPublicSettingsToPort(port, {
+            type: "error",
+            message: toError(errorValue).message,
+        });
+    }
+}
+
+watchSettings((settings) => {
+    const publicSettings = toPublicSettings(settings);
+    for (const port of publicSettingsPorts) {
+        postPublicSettingsToPort(port, {
+            type: "settings",
+            settings: publicSettings,
+        });
+    }
+});
+
 async function runGenerationStream(
     port: RuntimePort,
     request: GenerationRequest,
@@ -79,6 +127,16 @@ async function runGenerationStream(
 }
 
 getExtensionChrome()?.runtime?.onConnect?.addListener((port) => {
+    if (port.name === PUBLIC_SETTINGS_PORT) {
+        publicSettingsPorts.add(port);
+        void postCurrentPublicSettings(port);
+
+        port.onDisconnect.addListener(() => {
+            publicSettingsPorts.delete(port);
+        });
+        return;
+    }
+
     if (port.name !== GENERATION_STREAM_PORT) {
         return;
     }
