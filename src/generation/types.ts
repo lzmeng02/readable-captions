@@ -15,10 +15,3 @@ export type GenerationRequest = {
     task: GenerationTask;
     metadata?: GenerationMetadata;
 };
-
-export type GenerationStatus = "ready" | "placeholder";
-
-export type GenerationResult = {
-    status: GenerationStatus;
-    text: string | null;
-};

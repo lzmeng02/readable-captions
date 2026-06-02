@@ -1,13 +1,14 @@
-import { mountPanel } from "../panel/mount";
+import { mountPanel, cleanupKey } from "../panel/mount";
+import type { HostWithCleanup } from "../panel/mount";
 import { getPlatformAdapter, getTranscriptForUrl } from "../platforms";
-import { ensureHostInside, waitForElm } from "./dom";
+import type { PlatformTranscriptResult } from "../platforms/types";
+import { ensureHostInside, waitForElm, ROOT_ID } from "./dom";
 import { watchRouteChange } from "./route-watcher";
 
 const ANCHOR_ID = "div.bpx-player-auxiliary";
-const ROOT_ID = "readable-captions-root"; // From dom.ts
 
 let activeRenderId = 0;
-let currentData: any = null;
+let currentData: PlatformTranscriptResult | null = null;
 let currentUrl: string = "";
 let persistenceObserver: MutationObserver | null = null;
 
@@ -18,7 +19,7 @@ function mountShell() {
     mountPanel(host, { transcript: null, source: "loading", isLoading: true });
 }
 
-function fillData(data: any) {
+function fillData(data: PlatformTranscriptResult & { isLoading?: boolean }) {
     const anchor = document.querySelector(ANCHOR_ID);
     if (!anchor) return;
     const host = ensureHostInside(anchor);
@@ -74,13 +75,20 @@ async function renderCurrentPage(renderId: number, url: string): Promise<void> {
     setupPersistence();
 
     // Stage 2: Fetch data and fill
-    const data = await getTranscriptForUrl(url);
+    let data: PlatformTranscriptResult;
+    try {
+        data = await getTranscriptForUrl(url);
+    } catch (err) {
+        if (renderId !== activeRenderId || url !== location.href) return;
+        console.error("[RC] Failed to fetch transcript:", err instanceof Error ? err.message : err);
+        fillData({ transcript: null, source: "none", isLoading: false });
+        return;
+    }
 
     if (renderId !== activeRenderId || url !== location.href) {
         return;
     }
 
-    console.log("RC subtitle source:", data.source, "lines:", data.transcript?.length);
     currentData = data;
     fillData(data);
 }
@@ -95,7 +103,9 @@ function isSupportedRoute(url: string): boolean {
 }
 
 export function startContentScript(): void {
-    scheduleRender(location.href);
+    if (isSupportedRoute(location.href)) {
+        scheduleRender(location.href);
+    }
 
     watchRouteChange((url): void => {
         if (isSupportedRoute(url)) {
@@ -109,5 +119,7 @@ export function startContentScript(): void {
         if (persistenceObserver) {
             persistenceObserver.disconnect();
         }
+        const host = document.getElementById(ROOT_ID) as HostWithCleanup | null;
+        host?.[cleanupKey]?.();
     });
 }

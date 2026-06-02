@@ -1,11 +1,11 @@
 import { render } from "lit";
-import { panelTemplate, panelStyles } from "./panel-view";
+import { panelTemplate, panelStyles, resetPanelUiState } from "./panel-view";
 import type { Mode } from "./panel-view";
 import type { Transcript } from "../transcript/model";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { getSettings, watchSettings } from "../settings/storage";
-import type { DefaultTab, ExtensionSettings } from "../settings/types";
+import type { ExtensionSettings } from "../settings/types";
 import {
     copyMarkdownNote,
     copyTranscript,
@@ -15,7 +15,7 @@ import {
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
 
-const cleanupKey = Symbol("rcPanelCleanup");
+export const cleanupKey = Symbol("rcPanelCleanup");
 
 type PanelData = {
     transcript: Transcript | null;
@@ -27,7 +27,7 @@ type PanelData = {
     isLoading?: boolean;
 };
 
-type HostWithCleanup = HTMLElement & {
+export type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
 };
 
@@ -45,10 +45,6 @@ async function openExtensionOptionsPage(): Promise<void> {
     } else if (chromeApi?.runtime?.getURL) {
         window.open(chromeApi.runtime.getURL("options.html"), "_blank");
     }
-}
-
-function resolveInitialMode(defaultTab: DefaultTab): Mode {
-    return defaultTab;
 }
 
 function getGenerationSettingsKey(settings: ExtensionSettings): string {
@@ -89,6 +85,7 @@ function buildGenerationMetadata(data: PanelData): GenerationMetadata {
 export function mountPanel(host: HTMLElement, data: PanelData): void {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
+    resetPanelUiState();
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
 
@@ -106,6 +103,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
+    let subtitleChangeSeq = 0;
 
     const generationStates: Record<GenerationTask, GenerationState> = {
         overview: createGenerationState(),
@@ -247,8 +245,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
         if (!newUrl || newUrl === data.subtitleUrl) return;
 
+        const seq = ++subtitleChangeSeq;
         try {
             const { body } = await fetchBilibiliSubtitleBody(newUrl);
+            if (seq !== subtitleChangeSeq || isDisposed) return;
             data.transcript = normalizeBilibiliTranscript(body);
             data.subtitleUrl = newUrl;
             clearAllGenerationStates();
@@ -258,6 +258,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
                 renderPanel();
             }
         } catch (err) {
+            if (seq !== subtitleChangeSeq || isDisposed) return;
             console.error("Failed to fetch new language subtitle", err);
         }
     };
@@ -325,7 +326,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             generationEnabled = settings.generationEnabled;
             generationSettingsKey = getGenerationSettingsKey(settings);
             hasUserSelectedMode = false;
-            mode = resolveInitialMode(settings.defaultTab);
+            mode = settings.defaultTab;
 
             if (!generationEnabled) {
                 clearAllGenerationStates();
@@ -347,7 +348,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         const wasEnabled = generationEnabled;
         const nextGenerationSettingsKey = getGenerationSettingsKey(settings);
         const generationSettingsChanged = generationSettingsKey !== nextGenerationSettingsKey;
-        const nextDefaultMode = resolveInitialMode(settings.defaultTab);
+        const nextDefaultMode: Mode = settings.defaultTab;
 
         generationEnabled = settings.generationEnabled;
         generationSettingsKey = nextGenerationSettingsKey;

@@ -1,4 +1,4 @@
-const ROOT_ID = "readable-captions-root";
+export const ROOT_ID = "readable-captions-root";
 
 export function waitForElm(anchorID: string): Promise<Element> {
     const found = document.querySelector(anchorID);

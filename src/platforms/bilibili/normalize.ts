@@ -26,7 +26,7 @@ export function normalizeBilibiliTranscript(body: unknown): Transcript | null {
     for (const item of body) {
         const line = asRecord(item);
         if (!line) {
-            return body as Transcript;
+            return null;
         }
 
         const from = readNumber(line, "from");
@@ -34,7 +34,7 @@ export function normalizeBilibiliTranscript(body: unknown): Transcript | null {
         const content = readString(line, "content");
 
         if (from === null || to === null || content === null) {
-            return body as Transcript;
+            return null;
         }
 
         transcript.push({ from, to, content });

@@ -297,6 +297,18 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
     }
 
     const messages = buildMessages(options.settings, options.request);
+    const isDeepSeek = options.settings.generationProvider === "deepseek";
+
+    const body: Record<string, unknown> = {
+        model: resolveModel(options.settings, options.request.task),
+        messages,
+        stream: true,
+    };
+
+    if (isDeepSeek) {
+        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
+        body.extra_body = DEFAULT_EXTRA_BODY;
+    }
 
     const response = await fetch(resolveEndpoint(options.settings.generationProvider), {
         method: "POST",
@@ -304,13 +316,7 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-            model: resolveModel(options.settings, options.request.task),
-            messages,
-            reasoning_effort: DEFAULT_REASONING_EFFORT,
-            extra_body: DEFAULT_EXTRA_BODY,
-            stream: true,
-        }),
+        body: JSON.stringify(body),
         signal: options.signal,
     });
 

@@ -28,6 +28,11 @@ export type PanelUiOptions = {
 let isCollapsed = false;
 let isMenuOpen = false;
 
+export function resetPanelUiState(): void {
+    isCollapsed = false;
+    isMenuOpen = false;
+}
+
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode, userSelected?: boolean) => void,
