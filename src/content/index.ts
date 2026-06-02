@@ -11,6 +11,7 @@ let activeRenderId = 0;
 let currentData: PlatformTranscriptResult | null = null;
 let currentUrl: string = "";
 let persistenceObserver: MutationObserver | null = null;
+let activeWaitController: AbortController | null = null;
 
 function mountShell() {
     const anchor = document.querySelector(ANCHOR_ID);
@@ -19,7 +20,7 @@ function mountShell() {
     mountPanel(host, { transcript: null, source: "loading", isLoading: true });
 }
 
-function fillData(data: PlatformTranscriptResult & { isLoading?: boolean }) {
+function fillData(data: PlatformTranscriptResult & { isLoading?: boolean; errorMessage?: string }) {
     const anchor = document.querySelector(ANCHOR_ID);
     if (!anchor) return;
     const host = ensureHostInside(anchor);
@@ -30,7 +31,8 @@ function fillData(data: PlatformTranscriptResult & { isLoading?: boolean }) {
         subtitleUrl: data.subtitleUrl,
         aid: data.aid,
         cid: data.cid,
-        isLoading: false
+        isLoading: false,
+        errorMessage: data.errorMessage,
     });
 }
 
@@ -65,7 +67,20 @@ async function renderCurrentPage(renderId: number, url: string): Promise<void> {
     currentUrl = url;
     currentData = null; // reset
 
-    await waitForElm(ANCHOR_ID);
+    activeWaitController?.abort();
+    const waitController = new AbortController();
+    activeWaitController = waitController;
+
+    try {
+        await waitForElm(ANCHOR_ID, { signal: waitController.signal });
+    } catch {
+        return;
+    } finally {
+        if (activeWaitController === waitController) {
+            activeWaitController = null;
+        }
+    }
+
     if (renderId !== activeRenderId || url !== location.href) {
         return;
     }
@@ -80,8 +95,14 @@ async function renderCurrentPage(renderId: number, url: string): Promise<void> {
         data = await getTranscriptForUrl(url);
     } catch (err) {
         if (renderId !== activeRenderId || url !== location.href) return;
-        console.error("[RC] Failed to fetch transcript:", err instanceof Error ? err.message : err);
-        fillData({ transcript: null, source: "none", isLoading: false });
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[RC] Failed to fetch transcript:", message);
+        fillData({
+            transcript: null,
+            source: "none",
+            isLoading: false,
+            errorMessage: `Failed to fetch captions: ${message}`,
+        });
         return;
     }
 
@@ -116,10 +137,13 @@ export function startContentScript(): void {
         activeRenderId += 1;
         currentUrl = "";
         currentData = null;
+        activeWaitController?.abort();
+        activeWaitController = null;
         if (persistenceObserver) {
             persistenceObserver.disconnect();
         }
         const host = document.getElementById(ROOT_ID) as HostWithCleanup | null;
         host?.[cleanupKey]?.();
+        host?.remove();
     });
 }

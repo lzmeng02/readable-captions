@@ -1,20 +1,35 @@
 export const ROOT_ID = "readable-captions-root";
 
-export function waitForElm(anchorID: string): Promise<Element> {
+export function waitForElm(anchorID: string, options: { signal?: AbortSignal } = {}): Promise<Element> {
     const found = document.querySelector(anchorID);
     if (found) {
         return Promise.resolve(found);
     }
 
-    return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+        return Promise.reject(new DOMException("Element wait was aborted.", "AbortError"));
+    }
+
+    return new Promise((resolve, reject) => {
         const obs = new MutationObserver(() => {
             const elm = document.querySelector(anchorID);
             if (elm) {
-                obs.disconnect();
+                cleanup();
                 resolve(elm);
             }
         });
 
+        const abort = (): void => {
+            cleanup();
+            reject(new DOMException("Element wait was aborted.", "AbortError"));
+        };
+
+        const cleanup = (): void => {
+            obs.disconnect();
+            options.signal?.removeEventListener("abort", abort);
+        };
+
+        options.signal?.addEventListener("abort", abort, { once: true });
         obs.observe(document.documentElement, { childList: true, subtree: true });
     });
 }

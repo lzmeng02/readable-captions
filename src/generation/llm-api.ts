@@ -14,11 +14,8 @@ type StreamGenerationFromApiOptions = {
 };
 
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
-const DEFAULT_REASONING_EFFORT = "high";
-const DEFAULT_EXTRA_BODY = {
-    thinking: {
-        type: "enabled",
-    },
+const DEFAULT_DEEPSEEK_THINKING = {
+    type: "enabled",
 } as const;
 
 const GENERATOR_PROMPT = `
@@ -306,8 +303,7 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
     };
 
     if (isDeepSeek) {
-        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
-        body.extra_body = DEFAULT_EXTRA_BODY;
+        body.thinking = DEFAULT_DEEPSEEK_THINKING;
     }
 
     const response = await fetch(resolveEndpoint(options.settings.generationProvider), {

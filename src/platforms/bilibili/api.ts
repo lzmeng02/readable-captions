@@ -51,11 +51,12 @@ function shouldIncludeCookies(url: string): boolean {
     return new URL(url).hostname === "api.bilibili.com";
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
     const includeCookies = shouldIncludeCookies(url);
 
     const res = await fetch(url, {
         credentials: includeCookies ? "include" : "omit",
+        signal,
     });
 
     if (!res.ok) {
@@ -131,12 +132,12 @@ export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number): Prom
     return getSubtitleItems(subtitles);
 }
 
-export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string): Promise<{
+export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string, signal?: AbortSignal): Promise<{
     subtitleUrl: string;
     body: unknown;
 }> {
     const subtitleUrl = normalizeUrl(rawSubtitleUrl);
-    const subtitleJson = await fetchJson(subtitleUrl);
+    const subtitleJson = await fetchJson(subtitleUrl, signal);
     const root = asRecord(subtitleJson) ?? {};
 
     return {
