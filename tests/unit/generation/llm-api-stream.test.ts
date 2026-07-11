@@ -82,7 +82,7 @@ describe("chat completion streams", () => {
         ])).rejects.toThrow("empty");
     });
 
-    it("preserves accumulated snapshots for token callbacks", async () => {
+    it("emits the delta from a content-bearing stop event", async () => {
         const onToken = vi.fn();
         vi.stubGlobal("fetch", vi.fn(async () => createSseResponse([
             'data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\n\n',
@@ -99,7 +99,7 @@ describe("chat completion streams", () => {
             signal: new AbortController().signal,
             onToken,
         })).resolves.toBe("ab");
-        expect(onToken.mock.calls).toEqual([["a"], ["ab"]]);
+        expect(onToken.mock.calls).toEqual([["a"], ["b"]]);
     });
 
     it("decodes a multibyte content delta split across byte chunks", async () => {

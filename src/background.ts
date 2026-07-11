@@ -104,9 +104,9 @@ async function runGenerationStream(
             settings,
             request,
             signal: controller.signal,
-            onToken: (partialText) => {
+            onToken: (deltaText) => {
                 if (!controller.signal.aborted) {
-                    postToPort(port, { type: "token", text: partialText });
+                    postToPort(port, { type: "token", text: deltaText });
                 }
             },
         });

@@ -19,7 +19,7 @@ type StreamGenerationFromApiOptions = {
     settings: ExtensionSettings;
     request: GenerationRequest;
     signal: AbortSignal;
-    onToken: (partialText: string) => void;
+    onToken: (deltaText: string) => void;
 };
 
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
@@ -289,12 +289,12 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
         }
 
         for (const update of consumeChatSse(streamState, decoder.decode(value, { stream: true }))) {
-            options.onToken(update.snapshot);
+            options.onToken(update.delta);
         }
     }
 
     for (const update of consumeChatSse(streamState, decoder.decode())) {
-        options.onToken(update.snapshot);
+        options.onToken(update.delta);
     }
 
     return finalizeChatSse(streamState);

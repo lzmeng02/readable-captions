@@ -14,6 +14,7 @@ export type GenerationStreamClientMessage =
 export type GenerationStreamBackgroundMessage =
     | {
         type: "token";
+        /** One incremental content delta, not a cumulative snapshot. */
         text: string;
     }
     | {
