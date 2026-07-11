@@ -2,7 +2,7 @@ import { css, html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import type { TranscriptLine } from "../transcript/model";
+import type { PanelData } from "./types";
 
 export type Mode = "overview" | "intensive" | "original";
 
@@ -31,13 +31,7 @@ let isMenuOpen = false;
 export function panelTemplate(
     mode: Mode,
     setMode: (m: Mode, userSelected?: boolean) => void,
-    data: {
-        transcript: TranscriptLine[] | null;
-        source: string;
-        availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
-        subtitleUrl?: string;
-        isLoading?: boolean;
-    },
+    data: PanelData,
     onSettingsClick: () => void,
     currentLang: "zh" | "en" = "zh",
     onLangClick?: () => void,
@@ -140,7 +134,7 @@ export function panelTemplate(
     };
 
     const emptyState = () => {
-        if (data.isLoading) {
+        if (data.status === "loading") {
             return html`
                 <div class="empty-state">
                     <div class="bili-loading">
@@ -151,6 +145,19 @@ export function panelTemplate(
                     </div>
                 </div>
             `;
+        }
+
+        if (data.status === "error") {
+            return html`
+                <div class="empty-state error-state">
+                    <svg viewBox="0 0 24 24" width="32" height="32" stroke="#ff6666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <p class="error-copy">${data.errorMessage ?? (currentLang === "zh" ? "加载字幕失败" : "Failed to load captions")}</p>
+                </div>
+            `;
+        }
+
+        if (data.source !== "none") {
+            return html``;
         }
 
         return html`
@@ -213,7 +220,7 @@ export function panelTemplate(
 
     const renderTranscriptList = () => {
         const transcript = data.transcript;
-        if (!transcript || transcript.length === 0) return emptyState();
+        if (data.status !== "ready" || !transcript || transcript.length === 0) return emptyState();
 
         return html`
             ${renderMetaBar()}
@@ -238,6 +245,10 @@ export function panelTemplate(
     `;
 
     const renderGenerationView = (title: string, loadingText: string) => {
+        if (data.status !== "ready") {
+            return emptyState();
+        }
+
         if (!generationEnabled) {
             return renderDisabledGeneration();
         }

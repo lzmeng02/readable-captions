@@ -1,7 +1,6 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
-import type { Transcript } from "../transcript/model";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { watchPublicSettings } from "../settings/public-client";
@@ -16,18 +15,9 @@ import {
 } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
+import type { PanelCallbacks, PanelData, PanelHandle } from "./types";
 
 const cleanupKey = Symbol("rcPanelCleanup");
-
-type PanelData = {
-    transcript: Transcript | null;
-    source: string;
-    availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
-    subtitleUrl?: string;
-    aid?: number;
-    cid?: number;
-    isLoading?: boolean;
-};
 
 type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
@@ -84,9 +74,15 @@ function getGenerationFileSuffix(mode: Exclude<Mode, "original">): string {
     return mode === "overview" ? "overview" : "intensive";
 }
 
-export function mountPanel(host: HTMLElement, data: PanelData): void {
+export function mountPanel(
+    host: HTMLElement,
+    initialData: PanelData,
+    callbacks: PanelCallbacks = {},
+): PanelHandle {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
+
+    let data = initialData;
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
 
@@ -178,7 +174,13 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
 
     const maybeGenerateForMode = (): boolean => {
-        if (!isPanelGenerationMode(mode) || !generationEnabled || !data.transcript || data.transcript.length === 0) {
+        if (
+            data.status !== "ready"
+            || !isPanelGenerationMode(mode)
+            || !generationEnabled
+            || !data.transcript
+            || data.transcript.length === 0
+        ) {
             return false;
         }
 
@@ -266,6 +268,14 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             data.subtitleUrl = newUrl;
             clearAllGenerationStates();
             isNoteOpen = false;
+            callbacks.onTranscriptChange?.({
+                transcript: data.transcript,
+                source: data.source,
+                subtitleUrl: data.subtitleUrl,
+                aid: data.aid,
+                cid: data.cid,
+                availableSubtitles: data.availableSubtitles,
+            });
 
             if (!maybeGenerateForMode()) {
                 renderPanel();
@@ -273,6 +283,11 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         } catch (err) {
             console.error("Failed to fetch new language subtitle", err);
         }
+    };
+
+    const toggleLang = (): void => {
+        uiLanguage = uiLanguage === "zh" ? "en" : "zh";
+        renderPanel();
     };
 
     const renderPanel = (): void => {
@@ -371,13 +386,6 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         renderPanel();
     };
 
-    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
-
-    const toggleLang = (): void => {
-        uiLanguage = uiLanguage === "zh" ? "en" : "zh";
-        renderPanel();
-    };
-
     const handlePointerDown = (event: PointerEvent): void => {
         const path = event.composedPath();
         const isInside = path.some((node: any) => node?.classList?.contains("more-actions-wrapper"));
@@ -386,9 +394,8 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         }
     };
 
-    document.addEventListener("pointerdown", handlePointerDown, true);
-
-    managedHost[cleanupKey] = (): void => {
+    const dispose = (): void => {
+        if (isDisposed) return;
         isDisposed = true;
         clearAllGenerationStates();
         stopWatchingSettings?.();
@@ -396,5 +403,28 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         document.removeEventListener("pointerdown", handlePointerDown, true);
     };
 
+    const handle: PanelHandle = {
+        updateData(next) {
+            if (isDisposed) return;
+            data = next;
+            if (!maybeGenerateForMode()) renderPanel();
+        },
+        reset(next) {
+            if (isDisposed) return;
+            clearAllGenerationStates();
+            data = next;
+            mode = "original";
+            hasUserSelectedMode = false;
+            isNoteOpen = false;
+            renderPanel();
+        },
+        dispose,
+    };
+
+    managedHost[cleanupKey] = dispose;
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
+
     renderPanel();
+    return handle;
 }

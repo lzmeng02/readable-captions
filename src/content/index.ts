@@ -1,5 +1,7 @@
 import { mountPanel } from "../panel/mount";
+import type { PanelData, PanelHandle } from "../panel/types";
 import { getPlatformAdapter, getTranscriptForUrl } from "../platforms";
+import type { PlatformTranscriptResult } from "../platforms/types";
 import { ensureHostInside, waitForElm } from "./dom";
 import { watchRouteChange } from "./route-watcher";
 
@@ -7,30 +9,46 @@ const ANCHOR_ID = "div.bpx-player-auxiliary";
 const ROOT_ID = "readable-captions-root"; // From dom.ts
 
 let activeRenderId = 0;
-let currentData: any = null;
-let currentUrl: string = "";
+let currentData: PlatformTranscriptResult | null = null;
+let currentUrl = "";
 let persistenceObserver: MutationObserver | null = null;
+let panelHost: HTMLElement | null = null;
+let panelHandle: PanelHandle | null = null;
+
+function mountPanelInstance(host: HTMLElement, data: PanelData): void {
+    panelHandle?.dispose();
+    panelHost = host;
+    panelHandle = mountPanel(host, data, {
+        onTranscriptChange(result) {
+            currentData = result;
+        },
+    });
+}
 
 function mountShell() {
     const anchor = document.querySelector(ANCHOR_ID);
     if (!anchor) return;
     const host = ensureHostInside(anchor);
-    mountPanel(host, { transcript: null, source: "loading", isLoading: true });
+    const data: PanelData = { transcript: null, source: "none", status: "loading" };
+    if (panelHandle && panelHost === host) {
+        panelHandle.reset(data);
+        return;
+    }
+
+    mountPanelInstance(host, data);
 }
 
-function fillData(data: any) {
+function fillData(data: PlatformTranscriptResult) {
     const anchor = document.querySelector(ANCHOR_ID);
     if (!anchor) return;
     const host = ensureHostInside(anchor);
-    mountPanel(host, { 
-        transcript: data.transcript, 
-        source: data.source, 
-        availableSubtitles: data.availableSubtitles, 
-        subtitleUrl: data.subtitleUrl,
-        aid: data.aid,
-        cid: data.cid,
-        isLoading: false
-    });
+    const panelData: PanelData = { ...data, status: "ready" };
+    if (panelHandle && panelHost === host) {
+        panelHandle.updateData(panelData);
+        return;
+    }
+
+    mountPanelInstance(host, panelData);
 }
 
 function setupPersistence() {
@@ -109,5 +127,8 @@ export function startContentScript(): void {
         if (persistenceObserver) {
             persistenceObserver.disconnect();
         }
+        panelHandle?.dispose();
+        panelHandle = null;
+        panelHost = null;
     });
 }
