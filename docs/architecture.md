@@ -21,12 +21,12 @@ Readable Captions 是 Chrome Manifest V3 扩展，目前只适配 Bilibili。它
 `npm run build` 严格按下列顺序执行：
 
 1. `tsc` 对 `src/` 做严格类型检查，不输出文件。
-2. `vite.config.ts` 构建 content script，并以 `emptyOutDir: true` 清空 `dist/`。
+2. `vite.config.ts` 以 production mode 构建 content script，并清空 `dist/`。
 3. `vite.background.config.ts` 以 `emptyOutDir: false` 追加 background bundle。
 4. `vite.options.config.ts` 以 `emptyOutDir: false` 追加 options page。
 5. `copy-manifest.mjs` 复制 `manifest.json` 到 `dist/manifest.json`。
 
-三个 Vite build 和 manifest copy 都不能省略；其中会清空目录的 content build 必须先于其余追加/复制步骤。`package.json` 中的现有顺序是 canonical build。`npm run dev` 只运行默认的 content build；它不是完整扩展构建，详见开发文档。
+三个 Vite build 和 manifest copy 都不能省略；会清空目录的 production content build 必须先于其余追加/复制步骤。`npm run dev` 先执行这套完整 build，再以 development mode 启动 content-only watcher。development content rebuild 设置 `emptyOutDir: false`，因此保留已有的 background、options 和 manifest；watcher 不会自动重建这些 sibling artifact。
 
 ## 模块职责
 
@@ -47,27 +47,27 @@ src/
 
 ## Content script 与 SPA 生命周期
 
-入口 `startContentScript()` 的当前流程：
+入口 `startContentScript()` 创建一个 `ContentController`，首次 URL 和后续每 800 ms 检测到的 URL 都进入同一个 `navigate()` 边界：
 
 ```text
 src/content.ts
   → startContentScript()
-  → scheduleRender(location.href)
-  → waitForElm("div.bpx-player-auxiliary")
-  → mountPanel(loading)
-  → getTranscriptForUrl(url)
-  → mountPanel(transcript result)
+  → controller.navigate(location.href)
+  → getPlatformRouteKey(url)
+      → unsupported: dispose current session
+      → same route key: keep current session
+      → replacement: dispose old session, create loading session
+  → waitForElm("div.bpx-player-auxiliary", signal)
+  → mountPanel(host, loading, callbacks)
+  → getTranscriptForUrl(url, signal)
+  → panel.updateData(ready | error)
 ```
 
-- `watchRouteChange()` 每 800 ms 比较一次 `location.href`，用于捕获 Bilibili SPA 跳转。
-- `activeRenderId` 与 URL 二次校验阻止旧异步请求覆盖新页面。
-- `#readable-captions-root` 被插入 `div.bpx-player-auxiliary` 顶部；`mountPanel()` 在其中创建 open Shadow Root。
-- 全页面 `MutationObserver` 检测 Bilibili 重建播放器区域造成的 host 丢失，并用缓存的字幕结果重新挂载。
-- `mountPanel()` 在**复用同一个 host** 时会先执行该 host 上保存的 cleanup：取消未完成的生成、注销 settings watcher，并移除 document pointer listener。
-
-当 Bilibili 已把旧 host 从 DOM 删除、`ensureHostInside()` 创建新 host 时，新 host 取不到旧 host 上的 cleanup symbol；旧生成、watcher 或 document listener 可能继续存活。当前 persistence observer 能恢复可见面板，但不能保证已释放 detached panel 的资源。
-
-当前首次启动会无条件调度渲染，然后等待播放器 anchor；只有后续路由变化才先检查 adapter。因而在非视频页首次加载时，等待可能长期不结束。路由从视频变为不支持的页面时，代码会使旧 render 失效、清空缓存并停止 persistence observer，但不会显式移除 panel host 或调用 panel cleanup；最终是否消失依赖 Bilibili 是否重建对应 DOM。这些都是已知行为，不应在文档中描述为已处理。
+- Route key 是已验证的视频 ID 加 `p`；hash 和跟踪 query 不会重建同一 session，不支持的初始 URL 不等待 anchor。
+- 每个 session 持有自己的 `AbortController`、host、panel handle、canonical `PanelData` 和 observer disposer。替换/离开时先把它从 active slot 移除，再 abort、停止 observer、dispose panel 并移除 host；旧加载结果和旧 panel callback 只有在 session 仍 active 时才可写入。
+- 加载成功或失败都会写入 canonical terminal data；Bilibili/API 异常显示 error，而不是永久 loading。
+- `#readable-captions-root` 插入 `div.bpx-player-auxiliary` 顶部，UI 位于 open Shadow Root。MutationObserver 发现 host 被页面移除时，会把**同一个 host 和 panel handle**重新 prepend，并用 canonical data 调用 `updateData()`；不会 remount/reset，也不会丢失已提交的语言。
+- Panel 自身的 `reset()`/`dispose()` 会取消字幕、生成、待渲染 frame、settings watcher 和 document listener；同一 host 再次 mount 时先调用保存的 disposer。
 
 ## 字幕获取链路
 
@@ -99,25 +99,29 @@ type PlatformTranscriptResult = {
 getBilibiliTranscript(videoUrl)
   → getBiliVideoId(videoUrl)
   → GET https://api.bilibili.com/x/web-interface/view
-      → 读取 aid、bvid、目标分 P 的 cid、subtitle.list
-  → subtitle.list 有 URL
-      → 下载列表第一条字幕 JSON
+      → 读取 aid、bvid、pages[p-1] 的 selected cid
+      → 仅 p=1 暴露 view subtitle.list
+  → view subtitle URL 存在且 body 非空、有效
+      → 使用该字幕
       → source = "human_view"
-  → 否则 GET https://api.bilibili.com/x/player/wbi/v2
+  → view URL 不存在或 body 空/无效
+      → GET https://api.bilibili.com/x/player/wbi/v2?cid=<selected cid>
       → 优先选择 AI 字幕域名项，否则选择第一项
-      → 下载字幕 JSON
+      → 要求最终字幕 body 非空、有效
       → source = "ai_wbi"
-  → 都没有
+  → WBI 成功返回空字幕列表
       → transcript = null, source = "none"
 ```
 
 这里的 `human_view` 是历史命名：代码只知道字幕来自 view API 的 `subtitle.list` 第一项，并未验证它一定由人工创建。不要基于这个枚举推导更强的作者属性。
 
-`api.bilibili.com` 请求使用 `credentials: "include"`；字幕文件请求使用 `credentials: "omit"`。字幕 URL 的 `//` 和 `http:` 会统一规范为 HTTPS。`normalizeBilibiliTranscript()` 期望得到带 `from`、`to`、`content` 的数组。
+分 P 必须以 selected page 的 `cid` 请求 WBI。`p>1` 不复用 view response 顶层的第 1 P 字幕列表，即使两个 page 恰好共享 `cid`；越界 `p` 直接报错，不回退到第 1 P。
 
-WBI 分支只在 view API 没有字幕 URL 时进入。前序网络或解析异常目前不会被捕获后继续 fallback；异常会向 content orchestration 传播，而 `renderCurrentPage()` 也没有错误态处理，面板可能停留在 loading。
+View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code、HTTP/JSON 错误、缺失 aid/cid 或越界 part 都抛出带 endpoint（以及可用时的 code）的 `BilibiliApiError`，由 active content session 转成 terminal error。只有“view 字幕 body 空/无效”会进入 WBI；网络或 business error 不伪装成无字幕。最终 WBI body 空/无效也报错。
 
-切换字幕语言时，panel 会重新下载所选 URL、替换 transcript、清空 `overview`、`intensive`、`note` 三份生成状态，并按当前 tab 决定是否重新生成。
+`api.bilibili.com` 请求使用 `credentials: "include"`；字幕文件请求使用 `credentials: "omit"`，两者都转发 session/request signal。字幕 URL 的 `//` 和 `http:` 会统一规范为 HTTPS，使 committed URL 与 `<option>` 值可比较。
+
+语言选择是 latest-wins transaction：新选择先递增 request id、abort 旧 controller，并把 controlled `<select>` 显示为 pending URL；只有仍 current 且 panel live 的非空有效结果才能以新对象提交 transcript/URL、清空错误、三份生成状态和 Note drawer，并发出完整 `PlatformTranscriptResult`。当前请求失败时保留 committed transcript/URL、回滚 select 并显示经过 Lit 文本转义的错误；stale success/failure、reset 后或 dispose 后的 continuation 都不能写 UI、data 或 callback。Content callback 只更新同一个 active session 的 canonical data，因此 host 恢复使用最后提交的语言。
 
 ## Panel 状态与渲染
 
@@ -130,6 +134,8 @@ WBI 分支只在 view API 没有字幕 URL 时进入。前序网络或解析异�
 - 生成 Markdown 先经 `marked` 转换，再由 DOMPurify 清洗，最后才传给 Lit 的 `unsafeHTML`。
 - 原文可复制为纯文本或带时间戳文本，可下载 TXT 或 SRT；Note 可复制或下载 `.md`。
 - `isCollapsed`、`isMenuOpen` 是 `panel-view.ts` 的 module-level 状态；`mode`、`uiLanguage`、生成状态和 Note drawer 状态属于每次 `mountPanel()` 实例。
+- 流式 token 只为当前可见 task 调度 `requestAnimationFrame`；同一 frame 内的多个 token 合并成一次 Lit render。完成/错误立即 flush，tab 切换、reset、dispose 和其他同步 render 会取消旧 frame，隐藏 task 不因 token 重绘。
+- 标题提取只删除文档标题末尾的 `_哔哩哔哩_bilibili` 或 ` - 哔哩哔哩` suffix；`GPT-5`、`A-B-C` 等合法内部连字符保留。下载时仅用 `/[\\/:*?"<>|]/g` 把非法文件名字符替换为 `_`，生成文件再追加 `_overview`、`_intensive` 或 `_note`。
 
 当前原文视图没有搜索和当前播放行高亮；这些能力如果进入计划，必须作为未实现功能处理。
 
@@ -148,13 +154,15 @@ streamGeneration(request)
                                         → getSettings()
                                         → streamGenerationFromApi()
                                         → fetch(chat-completions, SSE)
-  ← { type: "token", text } ───────── accumulated partial Markdown
+  ← { type: "token", text } ───────── one raw content delta
   ← { type: "done", text }  ───────── completed Markdown
   ← { type: "error", message } ────── user-visible retry state
   → { type: "cancel" } ────────────── AbortController.abort()
 ```
 
-`token.text` 是截至当前的累计文本，不保证对应单个 token。每个 port 只维护一个 active request；同一 port 上的新 start、cancel 或 disconnect 会中止旧请求。Panel cleanup 也会取消 active request。
+API parser 和 background 的 `token.text` 都是 raw delta；content-side provider 线性累加 delta，再把 snapshot 交给 panel。`done.text` 是 background 严格校验后的 canonical final output，content 以它覆盖最终状态。每个 port 只维护一个 active request；同一 port 上的新 start、cancel 或 disconnect 会中止旧请求，late output 被 signal/request guard 丢弃。Panel 的 request version、reset 和 cleanup 提供第二层 stale-callback 防护。
+
+Background 用 `withKeepAlive()` 包住**一次**请求的 settings read 与完整 API stream，并每 25 秒调用一次 `chrome.runtime.getPlatformInfo()`。timer 在 success、error 或 abort 时立即且幂等清理；pulse 失败不会改变生成结果。它不是全局常驻 timer，也不跨 replacement 复用。
 
 ### Provider 行为
 
@@ -163,9 +171,10 @@ streamGeneration(request)
 - 当前没有自定义 base URL 或任意 OpenAI-compatible endpoint 设置。
 - DeepSeek 模型留空时使用 `deepseek-v4-flash`；OpenAI 模型留空会报错。
 - `note` 复用 intensive 的模型和自定义 prompt 配置，但使用独立的 Note base prompt。
-- 请求体当前对两个 provider 都发送 `reasoning_effort`、`extra_body` 和 `stream: true`；修改 provider 兼容性时必须回归两个 endpoint。
+- OpenAI body 只包含 common fields：`model`、`messages`、`stream: true`。
+- DeepSeek body 在 common fields 之外增加顶层 `thinking: { type: "enabled" }` 和 `reasoning_effort: "high"`。不要给 OpenAI 发送这两个字段，也不要重新引入 `extra_body`。
 
-SSE parser 按空行分隔事件、读取 `data:` 行、忽略 `[DONE]` 和无法解析的 JSON，只消费 `choices[0].delta.content`。
+SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` 和 reasoning-only progress；它只把非空 `choices[0].delta.content` 加入文本。Malformed JSON 和 streamed provider error 立即失败。EOF 只有同时满足已收到 `[DONE]`、最终 `finish_reason === "stop"`、且累计 content 非空才成功；缺 `[DONE]`、非 stop、reasoning-only 或空输出都进入 error/retry，不能把 partial text 当 success。content-bearing stop event 的 delta 会先纳入 final text。
 
 ## Settings 与迁移
 
@@ -194,6 +203,8 @@ Background 启动时调用 `chrome.storage.local.setAccessLevel({ accessLevel: "
 
 Panel 以 provider、models 和 prompt templates 组成生成缓存 key；这些值改变时会清空生成结果。当前 key 不包含 API key，因此只更换 API key 不会使已生成内容自动失效。
 
+Options form 是 Lit-controlled UI：select/input/textarea 使用 `.value`，checkbox 使用 `.checked`。加载、切换 provider、编辑、恢复默认都会从 `this.settings` 回写 live DOM property；“恢复默认”只改变当前表单状态，用户点击“保存设置”后才写入 storage，save 接收的值必须与屏幕显示一致。
+
 ## 信任边界与外发数据
 
 - LLM HTTP 请求和 `Authorization` header 只在 background service worker 中创建。除 Options 的凭据输入框外，不要把 key 放进 runtime-port message、Bilibili 页面/panel DOM、console 或导出内容。
@@ -216,12 +227,9 @@ Panel 以 provider、models 和 prompt templates 组成生成缓存 key；这些
 
 | 限制 | 开发影响 |
 |---|---|
-| `npm run dev` 只构建 content，并会清空 `dist/` | 不能把它当作完整扩展 watch；完整验证使用 `npm run build` |
-| 没有 tracked test、lint、format 或 CI | `npm run build` 加受影响上下文的 Chrome smoke test 是当前门禁 |
-| 非视频页首次加载会等待播放器 anchor | 修改路由编排时要覆盖非视频 → 视频和视频 → 非视频 |
-| 视频 → 非视频没有显式 panel teardown | 不要把 panel 一定消失或 cleanup 一定执行当成现有保证 |
-| 被 Bilibili 移除的旧 host 无法由新 host 调用 cleanup | DOM 恢复可能遗留 detached listener、watcher 或生成请求；生命周期改动需专门检查 |
-| 字幕 fetch 异常没有 error UI，也不会继续 fallback | 改字幕链路时区分“空结果”和“请求失败” |
+| `npm run dev` 的 watcher 只重建 content | 命令启动时五个 artifact 完整且 content rebuild 会保留 sibling；background/options/manifest 改动仍需重启 dev 或运行 build |
+| 有 Vitest，但没有 lint、formatter 或 CI workflow | focused test 后仍运行完整 suite、typecheck、build、diff check，并报告 Chrome/auth smoke |
+| 路由检测是 800 ms polling | SPA 生命周期测试不要假定同步导航回调 |
 | `human_view` 不等于已验证的人工字幕 | 不要把来源枚举当作者分类 |
 | `generationAccessMode = webapp` 未实现 | 不要在 UI 或文档中宣称支持 webapp 登录态 |
 | 原文搜索、播放行高亮、Planner、dynamic cards 未实现 | 只能作为产品方向或新需求，不能当作回归行为 |

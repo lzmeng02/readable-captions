@@ -14,7 +14,7 @@
    ```bash
    git clone <repo-url>
    cd readable-captions
-   npm install
+   npm ci
    ```
 
 2. 构建扩展：
@@ -24,19 +24,19 @@
 
 3. 打开 Chrome，进入 `chrome://extensions/`，开启「开发者模式」，点击「加载已解压的扩展程序」，选择 `dist/` 目录。
 
-4. 加载后进入扩展选项页，配置 AI API Key（OpenAI 或 DeepSeek 兼容接口）。
+4. 加载后进入扩展选项页，配置官方 OpenAI 或 DeepSeek API Key；两个 endpoint 固定，不支持自定义 base URL。
 
 ## 功能
 
 | Tab | 用途 |
 |-----|------|
-| **总览 (Overview)** | 默认面板。自适应视频类型提炼核心结论、takeaway、关键片段，帮助判断是否需要看原视频 |
+| **总览 (Overview)** | 自适应视频类型提炼核心结论、takeaway、关键片段，帮助判断是否需要看原视频 |
 | **精读 (Intensive)** | 高信息密度阅读稿，去掉口头禅和重复，目标是「不看视频也能理解内容」 |
-| **原文 (Original)** | 带时间戳的原文字幕，可点击跳转、搜索和查证 |
+| **原文 (Original)** | 带时间戳的原文字幕，可点击跳转、复制、下载和查证 |
 
 - **Markdown Note 导出** — 将 AI 整理的内容导出为 Markdown，适合保存到 Obsidian、Notion 或项目文档
-- **自适应内容** — 根据视频类型（测评、教程、经验分享等）动态调整输出结构
-- **实时 AI 流式生成** — SSE streaming，内容逐 token 渲染，不必等待完整响应
+- **自适应内容** — 在固定大纲内根据视频类型（测评、教程、经验分享等）调整信息侧重
+- **实时 AI 流式生成** — SSE 增量内容按 animation frame 合并渲染，不必等待完整响应
 
 ## 技术栈
 
@@ -45,7 +45,7 @@
 | 框架 | Chrome Extension Manifest V3 |
 | UI | [Lit](https://lit.dev/) + Shadow DOM 隔离 |
 | 构建 | TypeScript + Vite（3 入口） |
-| AI | OpenAI / DeepSeek 兼容 API，SSE streaming |
+| AI | OpenAI / DeepSeek 官方 API，strict SSE streaming |
 | 渲染 | marked + DOMPurify |
 
 ## 架构概览
@@ -65,7 +65,7 @@
 └───────────────────────────────────────────────────┘
                         ↓
 ┌─ Background Service Worker (ES Module) ───────────┐
-│  SSE Proxy → OpenAI / DeepSeek API                │
+│  Strict SSE + delta proxy → OpenAI / DeepSeek API │
 │  API keys from chrome.storage.local               │
 └───────────────────────────────────────────────────┘
 ```
@@ -75,8 +75,9 @@
 ## 开发
 
 ```bash
-npm run dev     # 监视 content script 变动并自动构建
+npm test        # 完整 Vitest 测试套件
 npm run build   # tsc 类型检查 → 3 个 Vite 构建 → 复制 manifest
+npm run dev     # 先完整构建，再监视 content；重建时保留其他四个产物
 ```
 
 构建产物位于 `dist/` 目录：
@@ -86,6 +87,9 @@ npm run build   # tsc 类型检查 → 3 个 Vite 构建 → 复制 manifest
 | `dist/content.js` (IIFE) | `src/content.ts` |
 | `dist/background.js` (ES) | `src/background.ts` |
 | `dist/options.html` + `options.js` | `options.html` + `src/options/` |
+| `dist/manifest.json` | `manifest.json` |
+
+测试、调试位置和 Chrome smoke matrix 见 [`docs/development.md`](docs/development.md)；运行时协议见 [`docs/architecture.md`](docs/architecture.md)。
 
 ### 目录结构
 
