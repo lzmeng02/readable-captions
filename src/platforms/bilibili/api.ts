@@ -121,7 +121,7 @@ function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
             const subtitle_url = readString(subtitle, "subtitle_url");
             const lan_doc = readString(subtitle, "lan_doc") || "未知语言";
             if (subtitle_url) {
-                results.push({ lan_doc, subtitle_url });
+                results.push({ lan_doc, subtitle_url: normalizeUrl(subtitle_url) });
             }
         }
     }

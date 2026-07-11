@@ -113,7 +113,7 @@ describe("fetchBilibiliViewInfo", () => {
         );
     });
 
-    it("uses the top-level cid for p=1 when pages are missing", async () => {
+    it("uses the top-level cid and canonicalizes subtitle option URLs for p=1", async () => {
         vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
             code: 0,
             data: {
@@ -129,7 +129,11 @@ describe("fetchBilibiliViewInfo", () => {
             .resolves.toMatchObject({
                 cid: 11,
                 defaultCid: 11,
-                subtitleUrl: "//p1.example/sub.json",
+                subtitleUrl: "https://p1.example/sub.json",
+                availableSubtitles: [{
+                    lan_doc: "Chinese",
+                    subtitle_url: "https://p1.example/sub.json",
+                }],
             });
     });
 });

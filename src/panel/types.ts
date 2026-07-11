@@ -11,6 +11,11 @@ export type PanelCallbacks = {
     onTranscriptChange?(result: PlatformTranscriptResult): void;
 };
 
+export type SubtitleSelectionUiState = {
+    pendingSubtitleUrl: string | null;
+    subtitleError: string | null;
+};
+
 export type PanelHandle = {
     updateData(next: PanelData): void;
     reset(next: PanelData): void;

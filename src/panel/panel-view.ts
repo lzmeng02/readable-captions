@@ -1,8 +1,8 @@
-import { css, html } from "lit";
+import { css, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import type { PanelData } from "./types";
+import type { PanelData, SubtitleSelectionUiState } from "./types";
 
 export type Mode = "overview" | "intensive" | "original";
 
@@ -39,6 +39,10 @@ export function panelTemplate(
     onCopy?: () => void | Promise<void>,
     onDownload?: () => void | Promise<void>,
     onSubtitleLanguageChange?: (url: string) => void,
+    subtitleSelectionState: SubtitleSelectionUiState = {
+        pendingSubtitleUrl: null,
+        subtitleError: null,
+    },
     uiOptions: PanelUiOptions = { generationEnabled: true },
     noteState?: NoteUiState,
 ) {
@@ -184,6 +188,7 @@ export function panelTemplate(
         }
 
         const hasSubtitles = data.availableSubtitles && data.availableSubtitles.length > 0;
+        const selectedSubtitleUrl = subtitleSelectionState.pendingSubtitleUrl ?? data.subtitleUrl ?? "";
 
         return html`
             <div class="meta-bar">
@@ -198,13 +203,17 @@ export function panelTemplate(
                         <select
                             class="lang-select"
                             title="${currentLang === "zh" ? "切换语言" : "Switch Language"}"
+                            .value=${selectedSubtitleUrl}
                             @change=${(event: Event) => {
                                 const target = event.target as HTMLSelectElement;
                                 onSubtitleLanguageChange?.(target.value);
                             }}
                         >
                             ${data.availableSubtitles!.map((subtitle) => html`
-                                <option value="${subtitle.subtitle_url}" ?selected=${subtitle.subtitle_url === data.subtitleUrl}>
+                                <option
+                                    .value=${subtitle.subtitle_url}
+                                    .selected=${subtitle.subtitle_url === selectedSubtitleUrl}
+                                >
                                     ${subtitle.lan_doc}
                                 </option>
                             `)}
@@ -213,6 +222,9 @@ export function panelTemplate(
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                     </div>
+                    ${subtitleSelectionState.subtitleError ? html`
+                        <span class="subtitle-error" role="status">${subtitleSelectionState.subtitleError}</span>
+                    ` : nothing}
                 ` : ""}
             </div>
         `;

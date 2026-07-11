@@ -246,6 +246,13 @@ describe("createContentController", () => {
         const selected: PlatformTranscriptResult = {
             transcript: [{ from: 4, to: 5, content: "selected language" }],
             source: "human_view",
+            subtitleUrl: "https://subtitle.example/selected.json",
+            availableSubtitles: [{
+                lan_doc: "Selected",
+                subtitle_url: "https://subtitle.example/selected.json",
+            }],
+            aid: 7,
+            cid: 11,
         };
 
         deps.panelCallbacks[0]!.onTranscriptChange?.(selected);
@@ -254,6 +261,32 @@ describe("createContentController", () => {
 
         expect(deps.panelHandles[0]!.updateData).toHaveBeenLastCalledWith({
             ...selected,
+            status: "ready",
+        });
+    });
+
+    it("ignores transcript changes from a panel whose session was replaced", async () => {
+        const deps = createDeps({
+            routeKeyForUrl: (url) => {
+                const id = url.match(/\/video\/(BV[^?/#]+)/)?.[1];
+                return id ? `bilibili:${id}:p=1` : null;
+            },
+        });
+        const controller = createContentController(deps);
+        await controller.navigate("https://www.bilibili.com/video/BV1first");
+        const staleCallbacks = deps.panelCallbacks[0]!;
+        await controller.navigate("https://www.bilibili.com/video/BV1second");
+
+        staleCallbacks.onTranscriptChange?.({
+            transcript: [{ from: 4, to: 5, content: "stale selected language" }],
+            source: "human_view",
+            subtitleUrl: "https://subtitle.example/stale.json",
+        });
+        deps.detachHost();
+        controller.recoverHost();
+
+        expect(deps.panelHandles[1]!.updateData).toHaveBeenLastCalledWith({
+            ...readyResult,
             status: "ready",
         });
     });

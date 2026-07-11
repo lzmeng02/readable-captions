@@ -105,6 +105,10 @@ export function mountPanel(
     let hasLoadedSettings = false;
     let copyFormat: PublicExtensionSettings["copyFormat"] = "readable_text";
     let downloadFormat: PublicExtensionSettings["downloadFormat"] = "txt";
+    let subtitleRequestId = 0;
+    let subtitleController: AbortController | null = null;
+    let pendingSubtitleUrl: string | null = null;
+    let subtitleError: string | null = null;
 
     const generationStates: Record<GenerationTask, GenerationState> = {
         overview: createGenerationState(),
@@ -112,6 +116,16 @@ export function mountPanel(
         note: createGenerationState(),
     };
     let stopWatchingSettings: (() => void) | null = null;
+
+    const invalidateSubtitleRequest = (): number => {
+        subtitleRequestId += 1;
+        const activeController = subtitleController;
+        subtitleController = null;
+        activeController?.abort();
+        pendingSubtitleUrl = null;
+        subtitleError = null;
+        return subtitleRequestId;
+    };
 
     const clearGenerationState = (task: GenerationTask): void => {
         const state = generationStates[task];
@@ -277,18 +291,40 @@ export function mountPanel(
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
-        if (!newUrl || newUrl === data.subtitleUrl) return;
+        if (!newUrl || isDisposed) return;
+
+        const requestId = invalidateSubtitleRequest();
+        if (newUrl === data.subtitleUrl) {
+            renderPanel();
+            return;
+        }
+
+        const controller = new AbortController();
+        subtitleController = controller;
+        pendingSubtitleUrl = newUrl;
+        renderPanel();
 
         try {
-            const { body } = await fetchBilibiliSubtitleBody(newUrl);
-            data.transcript = normalizeBilibiliTranscript(body);
-            data.subtitleUrl = newUrl;
+            const { body } = await fetchBilibiliSubtitleBody(newUrl, controller.signal);
+            const transcript = normalizeBilibiliTranscript(body);
+            if (!transcript) throw new Error("Invalid subtitle body.");
+            if (requestId !== subtitleRequestId || isDisposed) return;
+
+            data = {
+                ...data,
+                transcript,
+                subtitleUrl: newUrl,
+                status: "ready",
+            };
+            subtitleController = null;
+            pendingSubtitleUrl = null;
+            subtitleError = null;
             clearAllGenerationStates();
             isNoteOpen = false;
             callbacks.onTranscriptChange?.({
-                transcript: data.transcript,
+                transcript,
                 source: data.source,
-                subtitleUrl: data.subtitleUrl,
+                subtitleUrl: newUrl,
                 aid: data.aid,
                 cid: data.cid,
                 availableSubtitles: data.availableSubtitles,
@@ -298,7 +334,13 @@ export function mountPanel(
                 renderPanel();
             }
         } catch (err) {
-            console.error("Failed to fetch new language subtitle", err);
+            if (requestId !== subtitleRequestId || isDisposed) return;
+            subtitleController = null;
+            pendingSubtitleUrl = null;
+            subtitleError = err instanceof Error && err.message
+                ? err.message
+                : "Failed to load subtitles.";
+            renderPanel();
         }
     };
 
@@ -333,6 +375,7 @@ export function mountPanel(
             handleCopy,
             handleDownload,
             handleSubtitleLanguageChange,
+            { pendingSubtitleUrl, subtitleError },
             { generationEnabled },
             {
                 isOpen: isNoteOpen,
@@ -414,6 +457,7 @@ export function mountPanel(
     const dispose = (): void => {
         if (isDisposed) return;
         isDisposed = true;
+        invalidateSubtitleRequest();
         clearAllGenerationStates();
         stopWatchingSettings?.();
         stopWatchingSettings = null;
@@ -428,6 +472,7 @@ export function mountPanel(
         },
         reset(next) {
             if (isDisposed) return;
+            invalidateSubtitleRequest();
             clearAllGenerationStates();
             data = next;
             mode = "original";
