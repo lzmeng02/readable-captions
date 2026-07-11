@@ -28,6 +28,7 @@ type GenerationState = {
     isGenerating: boolean;
     error: string | null;
     activeAbort: AbortController | null;
+    requestVersion: number;
 };
 
 async function openExtensionOptionsPage(): Promise<void> {
@@ -49,6 +50,7 @@ function createGenerationState(): GenerationState {
         isGenerating: false,
         error: null,
         activeAbort: null,
+        requestVersion: 0,
     };
 }
 
@@ -113,8 +115,10 @@ export function mountPanel(
 
     const clearGenerationState = (task: GenerationTask): void => {
         const state = generationStates[task];
-        state.activeAbort?.abort();
+        state.requestVersion += 1;
+        const activeAbort = state.activeAbort;
         state.activeAbort = null;
+        activeAbort?.abort();
         state.text = null;
         state.isGenerating = false;
         state.error = null;
@@ -139,38 +143,51 @@ export function mountPanel(
             return;
         }
 
-        state.activeAbort?.abort();
+        state.requestVersion += 1;
+        const requestVersion = state.requestVersion;
+        const activeAbort = state.activeAbort;
+        state.activeAbort = null;
+        activeAbort?.abort();
         state.isGenerating = true;
         state.text = null;
         state.error = null;
         renderPanel();
 
-        state.activeAbort = streamGeneration({
+        const isCurrentRequest = (): boolean => !isDisposed && state.requestVersion === requestVersion;
+        const controller = streamGeneration({
             request: {
                 transcript: data.transcript,
                 task,
                 metadata: buildGenerationMetadata(data),
             },
             onToken: (partialText: string) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
                 state.text = partialText;
                 renderPanel();
             },
             onDone: (fullText: string) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
+                state.requestVersion += 1;
                 state.text = fullText;
                 state.isGenerating = false;
                 state.activeAbort = null;
                 renderPanel();
             },
             onError: (err: Error) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
+                state.requestVersion += 1;
                 state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
                 state.isGenerating = false;
                 state.activeAbort = null;
                 renderPanel();
             },
         });
+
+        if (isCurrentRequest()) {
+            state.activeAbort = controller;
+        } else {
+            controller.abort();
+        }
     };
 
     const maybeGenerateForMode = (): boolean => {

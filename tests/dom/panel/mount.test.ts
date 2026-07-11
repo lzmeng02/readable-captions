@@ -7,7 +7,11 @@ import type { PanelHandle } from "../../../src/panel/types";
 const mocks = vi.hoisted(() => ({
     stopSettings: vi.fn(),
     controllers: [] as AbortController[],
-    generationOptions: [] as Array<{ onDone(text: string): void }>,
+    generationOptions: [] as Array<{
+        onToken(text: string): void;
+        onDone(text: string): void;
+        onError(error: Error): void;
+    }>,
     copyTranscript: vi.fn(async () => undefined),
     copyMarkdownText: vi.fn(async () => undefined),
 }));
@@ -23,7 +27,11 @@ vi.mock("../../../src/settings/public-client", async () => {
 });
 
 vi.mock("../../../src/generation/llm-provider", () => ({
-    streamGeneration: vi.fn((options: { onDone(text: string): void }) => {
+    streamGeneration: vi.fn((options: {
+        onToken(text: string): void;
+        onDone(text: string): void;
+        onError(error: Error): void;
+    }) => {
         const controller = new AbortController();
         mocks.controllers.push(controller);
         mocks.generationOptions.push(options);
@@ -120,6 +128,29 @@ describe("mountPanel lifecycle", () => {
         handle.reset({ transcript: null, source: "none", status: "loading" });
         expect(activeAbort.signal.aborted).toBe(true);
         expect(activeTabText(host)).toBe("原文");
+    });
+
+    it("ignores stale generation callbacks after reset", async () => {
+        const { host, handle } = mountReadyPanel();
+        clickTab(host, "overview");
+        const staleGeneration = mocks.generationOptions.at(-1)!;
+
+        handle.reset({ transcript: null, source: "none", status: "loading" });
+        staleGeneration.onToken("stale token");
+        staleGeneration.onDone("# stale overview");
+        staleGeneration.onError(new Error("stale error"));
+
+        clickTab(host, "overview");
+        clickAction(host, "复制当前内容");
+        await Promise.resolve();
+        handle.updateData({
+            transcript: [{ from: 0, to: 1, content: "fresh" }],
+            source: "human_view",
+            status: "ready",
+        });
+
+        expect.soft(mocks.copyMarkdownText).not.toHaveBeenCalled();
+        expect(streamGeneration).toHaveBeenCalledTimes(2);
     });
 
     it("dispose is idempotent and removes listeners once", () => {
