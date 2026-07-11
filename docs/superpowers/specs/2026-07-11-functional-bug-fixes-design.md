@@ -128,7 +128,7 @@ Wrap each active generation request in a bounded keepalive. Every 25 seconds, wh
 
 Options selects bind their current value with `.value`; the generation checkbox binds with `.checked`. Reset therefore updates both component state and dirty native controls before a subsequent save.
 
-Production builds keep `emptyOutDir: true` for a clean release. Development adds a content-watch config with `emptyOutDir: false`. `npm run dev` first performs one complete extension build, then starts the content-only watcher, so `manifest.json`, `background.js`, and the options bundle remain loadable.
+Production builds keep `emptyOutDir: true` for a clean release. The content Vite config uses `emptyOutDir: false` in development mode. `npm run dev` first performs one complete extension build, then starts the content-only watcher in that mode, so `manifest.json`, `background.js`, and the options bundle remain loadable.
 
 Title extraction becomes a pure helper that removes only known Bilibili site suffixes. Ordinary hyphens such as `GPT-5` and `A-B-C` are preserved. Existing filename sanitization remains responsible for illegal filesystem characters.
 
