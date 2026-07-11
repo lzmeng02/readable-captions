@@ -13,12 +13,19 @@ export function getPlatformAdapter(url: string): PlatformAdapter | null {
     return null;
 }
 
-export async function getTranscriptForUrl(url: string): Promise<PlatformTranscriptResult> {
+export function getPlatformRouteKey(url: string): string | null {
+    return getPlatformAdapter(url)?.getRouteKey(url) ?? null;
+}
+
+export async function getTranscriptForUrl(
+    url: string,
+    signal?: AbortSignal,
+): Promise<PlatformTranscriptResult> {
     const adapter = getPlatformAdapter(url);
 
     if (!adapter) {
         return { transcript: null, source: "none" };
     }
 
-    return adapter.getTranscript(url);
+    return adapter.getTranscript(url, signal);
 }

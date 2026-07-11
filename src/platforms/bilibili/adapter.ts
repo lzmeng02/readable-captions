@@ -2,6 +2,7 @@ import {
     fetchBilibiliAiSubtitleUrl,
     fetchBilibiliSubtitleBody,
     fetchBilibiliViewInfo,
+    getBilibiliRouteKey,
     getBiliVideoId,
 } from "./api";
 import { normalizeBilibiliTranscript } from "./normalize";
@@ -57,5 +58,6 @@ export const bilibiliAdapter: PlatformAdapter = {
     matches(url: string): boolean {
         return getBiliVideoId(url) !== null;
     },
+    getRouteKey: getBilibiliRouteKey,
     getTranscript: getBilibiliTranscript,
 };

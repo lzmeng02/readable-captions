@@ -64,7 +64,7 @@ function requireBilibiliEnvelope(value: unknown, endpoint: string): Record<strin
     return root;
 }
 
-function getBiliPart(url: string): number {
+export function getBiliPart(url: string): number {
     const u = new URL(url);
     const pStr = u.searchParams.get("p");
     const p = pStr ? Number(pStr) : 1;
@@ -155,6 +155,11 @@ export function getBiliVideoId(url: string): string | null {
     }
 
     return null;
+}
+
+export function getBilibiliRouteKey(url: string): string | null {
+    const id = getBiliVideoId(url);
+    return id ? `bilibili:${id}:p=${getBiliPart(url)}` : null;
 }
 
 export async function fetchBilibiliViewInfo(videoUrl: string, signal?: AbortSignal): Promise<BilibiliViewInfo | null> {
