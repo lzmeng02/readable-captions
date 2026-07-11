@@ -16,6 +16,7 @@ import {
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
 import type { PanelCallbacks, PanelData, PanelHandle } from "./types";
+import { createRenderScheduler } from "./render-scheduler";
 
 const cleanupKey = Symbol("rcPanelCleanup");
 
@@ -117,6 +118,9 @@ export function mountPanel(
     };
     let stopWatchingSettings: (() => void) | null = null;
 
+    const isGenerationTaskVisible = (task: GenerationTask): boolean =>
+        isNoteOpen ? task === "note" : task !== "note" && mode === task;
+
     const invalidateSubtitleRequest = (): number => {
         subtitleRequestId += 1;
         const activeController = subtitleController;
@@ -177,7 +181,9 @@ export function mountPanel(
             onToken: (partialText: string) => {
                 if (!isCurrentRequest()) return;
                 state.text = partialText;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.schedule();
+                }
             },
             onDone: (fullText: string) => {
                 if (!isCurrentRequest()) return;
@@ -185,7 +191,9 @@ export function mountPanel(
                 state.text = fullText;
                 state.isGenerating = false;
                 state.activeAbort = null;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.flush();
+                }
             },
             onError: (err: Error) => {
                 if (!isCurrentRequest()) return;
@@ -193,7 +201,9 @@ export function mountPanel(
                 state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
                 state.isGenerating = false;
                 state.activeAbort = null;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.flush();
+                }
             },
         });
 
@@ -349,7 +359,7 @@ export function mountPanel(
         renderPanel();
     };
 
-    const renderPanel = (): void => {
+    const renderPanelNow = (): void => {
         if (isDisposed) {
             return;
         }
@@ -389,6 +399,13 @@ export function mountPanel(
                 onDownload: handleDownloadNote,
             },
         ), shadow);
+    };
+
+    const generationRenderScheduler = createRenderScheduler(renderPanelNow);
+
+    const renderPanel = (): void => {
+        generationRenderScheduler.cancel();
+        renderPanelNow();
     };
 
     const setMode = (nextMode: Mode, userSelected = false): void => {
@@ -457,6 +474,7 @@ export function mountPanel(
     const dispose = (): void => {
         if (isDisposed) return;
         isDisposed = true;
+        generationRenderScheduler.cancel();
         invalidateSubtitleRequest();
         clearAllGenerationStates();
         stopWatchingSettings?.();
@@ -472,6 +490,7 @@ export function mountPanel(
         },
         reset(next) {
             if (isDisposed) return;
+            generationRenderScheduler.cancel();
             invalidateSubtitleRequest();
             clearAllGenerationStates();
             data = next;
