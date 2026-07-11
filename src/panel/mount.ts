@@ -17,6 +17,7 @@ import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
 import type { PanelCallbacks, PanelData, PanelHandle } from "./types";
 import { createRenderScheduler } from "./render-scheduler";
+import { extractVideoTitle } from "./title-utils";
 
 const cleanupKey = Symbol("rcPanelCleanup");
 
@@ -59,13 +60,9 @@ function isPanelGenerationMode(mode: Mode): mode is Exclude<GenerationTask, "not
     return mode === "overview" || mode === "intensive";
 }
 
-function extractVideoTitle(): string {
-    return document.title.split("_哔哩")[0]?.split("-")[0]?.trim() || "bilibili_video";
-}
-
 function buildGenerationMetadata(data: PanelData): GenerationMetadata {
     return {
-        title: extractVideoTitle(),
+        title: extractVideoTitle(document.title),
         url: location.href,
         aid: data.aid,
         cid: data.cid,
@@ -273,7 +270,7 @@ export function mountPanel(
     const handleDownloadNote = (): void => {
         const note = generationStates.note.text;
         if (!note) return;
-        downloadMarkdownNote(note, extractVideoTitle());
+        downloadMarkdownNote(note, extractVideoTitle(document.title));
     };
 
     const handleCopy = async (): Promise<void> => {
@@ -292,12 +289,12 @@ export function mountPanel(
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
             if (!text) return;
-            downloadMarkdownText(text, extractVideoTitle(), getGenerationFileSuffix(mode));
+            downloadMarkdownText(text, extractVideoTitle(document.title), getGenerationFileSuffix(mode));
             return;
         }
 
         if (!data.transcript || data.transcript.length === 0) return;
-        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle());
+        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle(document.title));
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {

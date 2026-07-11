@@ -161,6 +161,7 @@ function originalTranscriptText(host: HTMLElement): string {
 
 beforeEach(() => {
     document.body.replaceChildren();
+    document.title = "";
     mocks.controllers.length = 0;
     mocks.generationOptions.length = 0;
     vi.clearAllMocks();
@@ -267,6 +268,21 @@ describe("mountPanel lifecycle", () => {
         await Promise.resolve();
         expect(mocks.copyTranscript).toHaveBeenCalledTimes(1);
         expect(mocks.copyMarkdownText).not.toHaveBeenCalled();
+    });
+
+    it("preserves legal hyphens in Original download filenames", () => {
+        document.title = "GPT-5 教程_哔哩哔哩_bilibili";
+        vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:download");
+        vi.spyOn(window, "setTimeout").mockImplementation(() => 0);
+        let downloadedFilename = "";
+        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+            downloadedFilename = this.download;
+        });
+        const { host } = mountReadyPanel();
+
+        clickAction(host, "下载当前内容");
+
+        expect(downloadedFilename).toBe("GPT-5 教程.txt");
     });
 
     it("keeps Overview copy bound to generated Markdown export", async () => {
