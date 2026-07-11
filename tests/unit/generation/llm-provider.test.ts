@@ -42,4 +42,41 @@ describe("runtime generation streams", () => {
 
         expect(onDone).toHaveBeenCalledWith("canonical");
     });
+
+    it("ignores late port messages after aborting a stream", () => {
+        const lateMessages = [
+            { type: "token", text: "late" },
+            { type: "done", text: "late" },
+            { type: "error", message: "late" },
+        ] as const;
+
+        for (const lateMessage of lateMessages) {
+            const fake = createFakeRuntimePort();
+            const disconnect = vi.spyOn(fake.port, "disconnect");
+            vi.stubGlobal("chrome", { runtime: { connect: () => fake.port } });
+            const onToken = vi.fn();
+            const onDone = vi.fn();
+            const onError = vi.fn();
+            const controller = streamGeneration({
+                request: generationRequest,
+                onToken,
+                onDone,
+                onError,
+            });
+
+            controller.abort();
+
+            expect(fake.postedMessages).toEqual([
+                { type: "start", request: generationRequest },
+                { type: "cancel" },
+            ]);
+            expect(disconnect).toHaveBeenCalledOnce();
+
+            fake.emitMessage(lateMessage);
+
+            expect(onToken).not.toHaveBeenCalled();
+            expect(onDone).not.toHaveBeenCalled();
+            expect(onError).not.toHaveBeenCalled();
+        }
+    });
 });

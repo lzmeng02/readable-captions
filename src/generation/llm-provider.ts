@@ -87,6 +87,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
                 return;
             }
 
+            finished = true;
             const cancelMessage: GenerationStreamClientMessage = { type: "cancel" };
             try {
                 port.postMessage(cancelMessage);
