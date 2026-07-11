@@ -419,4 +419,29 @@ describe("mountPanel subtitle language changes", () => {
         expect(host.shadowRoot?.textContent).toContain("Invalid subtitle body");
         expect(onTranscriptChange).not.toHaveBeenCalled();
     });
+
+    it("keeps committed panel state when the selected subtitle body is empty", async () => {
+        mocks.fetchSubtitleBody.mockResolvedValueOnce({
+            subtitleUrl: subtitleUrls.b,
+            body: [],
+        });
+        const onTranscriptChange = vi.fn();
+        const { host } = mountMultilingualPanel({ onTranscriptChange });
+        clickTab(host, "overview");
+        mocks.generationOptions.at(-1)!.onDone("# committed overview");
+        clickTab(host, "original");
+
+        changeLanguage(host, subtitleUrls.b);
+        await flushPromises();
+
+        clickTab(host, "overview");
+        clickAction(host, "复制当前内容");
+        await Promise.resolve();
+        expect.soft(mocks.copyMarkdownText).toHaveBeenCalledWith("# committed overview");
+        clickTab(host, "original");
+        expect.soft(selectedLanguage(host)).toBe(subtitleUrls.a);
+        expect.soft(originalTranscriptText(host)).toContain("A transcript");
+        expect.soft(host.shadowRoot?.textContent).toContain("Invalid subtitle body");
+        expect(onTranscriptChange).not.toHaveBeenCalled();
+    });
 });

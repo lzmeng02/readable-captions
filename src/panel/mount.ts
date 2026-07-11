@@ -307,7 +307,7 @@ export function mountPanel(
         try {
             const { body } = await fetchBilibiliSubtitleBody(newUrl, controller.signal);
             const transcript = normalizeBilibiliTranscript(body);
-            if (!transcript) throw new Error("Invalid subtitle body.");
+            if (!transcript || transcript.length === 0) throw new Error("Invalid subtitle body.");
             if (requestId !== subtitleRequestId || isDisposed) return;
 
             data = {
