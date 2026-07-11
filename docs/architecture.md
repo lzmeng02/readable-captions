@@ -67,7 +67,7 @@ src/content.ts
 - 每个 session 持有自己的 `AbortController`、host、panel handle、canonical `PanelData` 和 observer disposer。替换/离开时先把它从 active slot 移除，再 abort、停止 observer、dispose panel 并移除 host；旧加载结果和旧 panel callback 只有在 session 仍 active 时才可写入。
 - 加载成功或失败都会写入 canonical terminal data；Bilibili/API 异常显示 error，而不是永久 loading。
 - `#readable-captions-root` 插入 `div.bpx-player-auxiliary` 顶部，UI 位于 open Shadow Root。MutationObserver 发现 host 被页面移除时，会把**同一个 host 和 panel handle**重新 prepend，并用 canonical data 调用 `updateData()`；不会 remount/reset，也不会丢失已提交的语言。
-- Panel 自身的 `reset()`/`dispose()` 会取消字幕、生成、待渲染 frame、settings watcher 和 document listener；同一 host 再次 mount 时先调用保存的 disposer。
+- Panel 的 `reset(next)` 会取消待渲染 frame、字幕请求和三类生成工作，替换 per-video data，恢复 `original` mode、清除用户选 tab 标记并关闭 Note，然后重新渲染；panel 实例仍存活，因此保留 long-lived public-settings watcher 和 document pointer listener。`dispose()` 才会在取消这些 pending work 之外标记实例结束、停止 watcher 并移除 document listener；同一 host 再次 mount 时会先调用保存的 disposer。
 
 ## 字幕获取链路
 
