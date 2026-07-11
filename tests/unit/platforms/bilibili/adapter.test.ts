@@ -52,7 +52,11 @@ describe("getBilibiliTranscript", () => {
         vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
             const url = new URL(String(input));
             calls.push(url);
-            if (url.pathname === "/x/web-interface/view") return jsonResponse(viewFixture({ defaultCid: 11, selectedCid: 22 }));
+            if (url.pathname === "/x/web-interface/view") return jsonResponse(viewFixture({
+                defaultCid: 11,
+                selectedCid: 22,
+                subtitleUrl: "//p1.example/sub.json",
+            }));
             if (url.pathname === "/x/player/wbi/v2") return jsonResponse(wbiFixture("//p2.example/sub.json"));
             if (url.hostname === "p2.example") return jsonResponse({ body: [{ from: 2, to: 3, content: "P2" }] });
             throw new Error(`Unexpected URL ${url}`);

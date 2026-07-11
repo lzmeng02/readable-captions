@@ -92,15 +92,13 @@ function normalizeAidVideoId(id: string | null): string | null {
     return `av${id}`;
 }
 
-function shouldIncludeCookies(url: string): boolean {
-    return new URL(url).hostname === "api.bilibili.com";
-}
-
-async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
-    const includeCookies = shouldIncludeCookies(url);
-
+async function fetchJson(
+    url: string,
+    credentials: RequestCredentials,
+    signal?: AbortSignal,
+): Promise<unknown> {
     const res = await fetch(url, {
-        credentials: includeCookies ? "include" : "omit",
+        credentials,
         signal,
     });
 
@@ -172,22 +170,28 @@ export async function fetchBilibiliViewInfo(videoUrl: string, signal?: AbortSign
         view.searchParams.set("bvid", id);
     }
 
-    const root = requireBilibiliEnvelope(await fetchJson(view.toString(), signal), view.toString());
+    const root = requireBilibiliEnvelope(await fetchJson(view.toString(), "include", signal), view.toString());
     const data = getNestedRecord(root, "data");
     if (!data) throw new BilibiliApiError("Bilibili view response has no data.", view.toString());
 
     const aid = readNumber(data, "aid");
     const bvid = readString(data, "bvid");
     const pages = getArray(data, "pages");
+    const part = getBiliPart(videoUrl);
     const firstPage = asRecord(pages[0]);
-    const selectedPage = asRecord(pages[getBiliPart(videoUrl) - 1]) ?? firstPage;
+    const selectedPage = asRecord(pages[part - 1]);
     const defaultCid = readNumber(data, "cid") ?? (firstPage ? readNumber(firstPage, "cid") : undefined);
-    const cid = selectedPage ? readNumber(selectedPage, "cid") : undefined;
+    if (part > 1 && !selectedPage) {
+        throw new BilibiliApiError(`Bilibili view response has no part ${part}.`, view.toString());
+    }
+    const cid = selectedPage
+        ? readNumber(selectedPage, "cid")
+        : defaultCid;
     if (aid === undefined || cid === undefined || defaultCid === undefined) {
         throw new BilibiliApiError("Bilibili view response is missing aid/cid.", view.toString());
     }
 
-    const availableSubtitles = cid === defaultCid
+    const availableSubtitles = part === 1
         ? getSubtitleItems(getArray(getNestedRecord(data, "subtitle") ?? {}, "list"))
         : [];
     const subtitleUrl = availableSubtitles.length > 0 ? availableSubtitles[0].subtitle_url : undefined;
@@ -210,7 +214,7 @@ export async function fetchBilibiliAiSubtitleUrl(
     wbi.searchParams.set("cid", String(cid));
     wbi.searchParams.set("_t", String(Date.now()));
 
-    const root = requireBilibiliEnvelope(await fetchJson(wbi.toString(), signal), wbi.toString());
+    const root = requireBilibiliEnvelope(await fetchJson(wbi.toString(), "include", signal), wbi.toString());
     const data = getNestedRecord(root, "data") ?? {};
     const subtitle = getNestedRecord(data, "subtitle") ?? {};
     const subtitles = getArray(subtitle, "subtitles");
@@ -223,7 +227,7 @@ export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string, signal?:
     body: unknown;
 }> {
     const subtitleUrl = normalizeUrl(rawSubtitleUrl);
-    const subtitleJson = await fetchJson(subtitleUrl, signal);
+    const subtitleJson = await fetchJson(subtitleUrl, "omit", signal);
     const root = asRecord(subtitleJson) ?? {};
 
     return {
