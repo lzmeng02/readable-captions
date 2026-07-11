@@ -6,6 +6,14 @@ type ChatMessage = {
     content: string;
 };
 
+type ChatCompletionRequestBody = {
+    model: string;
+    messages: ChatMessage[];
+    stream: true;
+    thinking?: { type: "enabled" };
+    reasoning_effort?: "high";
+};
+
 type StreamGenerationFromApiOptions = {
     settings: ExtensionSettings;
     request: GenerationRequest;
@@ -15,11 +23,20 @@ type StreamGenerationFromApiOptions = {
 
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 const DEFAULT_REASONING_EFFORT = "high";
-const DEFAULT_EXTRA_BODY = {
-    thinking: {
-        type: "enabled",
-    },
-} as const;
+const DEFAULT_DEEPSEEK_THINKING = { type: "enabled" } as const;
+
+function buildChatCompletionBody(
+    provider: ExtensionSettings["generationProvider"],
+    model: string,
+    messages: ChatMessage[],
+): ChatCompletionRequestBody {
+    const body: ChatCompletionRequestBody = { model, messages, stream: true };
+    if (provider === "deepseek") {
+        body.thinking = DEFAULT_DEEPSEEK_THINKING;
+        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
+    }
+    return body;
+}
 
 const GENERATOR_PROMPT = `
 你是 Readable Captions 的 Overview 生成器。
@@ -304,13 +321,11 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-            model: resolveModel(options.settings, options.request.task),
+        body: JSON.stringify(buildChatCompletionBody(
+            options.settings.generationProvider,
+            resolveModel(options.settings, options.request.task),
             messages,
-            reasoning_effort: DEFAULT_REASONING_EFFORT,
-            extra_body: DEFAULT_EXTRA_BODY,
-            stream: true,
-        }),
+        )),
         signal: options.signal,
     });
 
