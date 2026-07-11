@@ -1,4 +1,5 @@
 import type { ExtensionSettings } from "../settings/types";
+import { consumeChatSse, createChatStreamState, finalizeChatSse } from "./sse";
 import type { GenerationMetadata, GenerationRequest, GenerationTask } from "./types";
 
 type ChatMessage = {
@@ -245,68 +246,6 @@ function getApiErrorMessage(value: unknown): string | null {
     return typeof message === "string" && message.length > 0 ? message : null;
 }
 
-function getChunkDelta(value: unknown): string | null {
-    if (typeof value !== "object" || value === null) {
-        return null;
-    }
-
-    const choices = (value as Record<string, unknown>).choices;
-    if (!Array.isArray(choices)) {
-        return null;
-    }
-
-    const firstChoice = choices[0];
-    if (typeof firstChoice !== "object" || firstChoice === null) {
-        return null;
-    }
-
-    const delta = (firstChoice as Record<string, unknown>).delta;
-    if (typeof delta !== "object" || delta === null) {
-        return null;
-    }
-
-    const content = (delta as Record<string, unknown>).content;
-    return typeof content === "string" ? content : null;
-}
-
-function parseSseEvent(eventText: string): unknown[] {
-    const payloads: unknown[] = [];
-    const lines = eventText.split(/\r?\n/);
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) {
-            continue;
-        }
-
-        const data = trimmed.slice(5).trimStart();
-        if (!data || data === "[DONE]") {
-            continue;
-        }
-
-        try {
-            payloads.push(JSON.parse(data));
-        } catch {
-            // Ignore malformed SSE chunks. The stream can continue with later chunks.
-        }
-    }
-
-    return payloads;
-}
-
-function processSseBuffer(buffer: string, onPayload: (payload: unknown) => void): string {
-    const events = buffer.split(/\r?\n\r?\n/);
-    const pending = events.pop() ?? "";
-
-    for (const eventText of events) {
-        for (const payload of parseSseEvent(eventText)) {
-            onPayload(payload);
-        }
-    }
-
-    return pending;
-}
-
 export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
     const apiKey = options.settings.generationApiKey.trim();
     if (!apiKey) {
@@ -341,18 +280,7 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
     }
 
     const decoder = new TextDecoder();
-    let accumulated = "";
-    let buffer = "";
-
-    const handlePayload = (payload: unknown): void => {
-        const delta = getChunkDelta(payload);
-        if (!delta) {
-            return;
-        }
-
-        accumulated += delta;
-        options.onToken(accumulated);
-    };
+    const streamState = createChatStreamState();
 
     while (true) {
         const { done, value } = await reader.read();
@@ -360,14 +288,14 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
             break;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-        buffer = processSseBuffer(buffer, handlePayload);
+        for (const update of consumeChatSse(streamState, decoder.decode(value, { stream: true }))) {
+            options.onToken(update.snapshot);
+        }
     }
 
-    buffer += decoder.decode();
-    for (const payload of parseSseEvent(buffer)) {
-        handlePayload(payload);
+    for (const update of consumeChatSse(streamState, decoder.decode())) {
+        options.onToken(update.snapshot);
     }
 
-    return accumulated;
+    return finalizeChatSse(streamState);
 }
