@@ -607,10 +607,10 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>默认标签页</label>
-                <select class="form-control" name="defaultTab" @change=${this.handleFieldChange}>
-                    <option value="original" ?selected=${this.settings.defaultTab === 'original'}>原文</option>
-                    <option value="intensive" ?selected=${this.settings.defaultTab === 'intensive'}>精读</option>
-                    <option value="overview" ?selected=${this.settings.defaultTab === 'overview'}>总览</option>
+                <select class="form-control" name="defaultTab" .value=${this.settings.defaultTab} @change=${this.handleFieldChange}>
+                    <option value="original">原文</option>
+                    <option value="intensive">精读</option>
+                    <option value="overview">总览</option>
                 </select>
                 <p class="hint">打开视频时，面板默认展示的视图。</p>
             </div>
@@ -623,7 +623,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     <p class="toggle-desc">用于总览、精读和 Markdown Note 生成。关闭后仍可查看原文字幕。</p>
                 </div>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="generationEnabled" ?checked=${this.settings.generationEnabled} @change=${this.handleFieldChange} />
+                    <input type="checkbox" name="generationEnabled" .checked=${this.settings.generationEnabled} @change=${this.handleFieldChange} />
                     <span class="toggle-slider"></span>
                 </label>
             </div>
@@ -713,18 +713,18 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>复制格式</label>
-                <select class="form-control" name="copyFormat" @change=${this.handleFieldChange}>
-                    <option value="readable_text" ?selected=${this.settings.copyFormat === 'readable_text'}>纯文本（适合阅读）</option>
-                    <option value="timestamped_text" ?selected=${this.settings.copyFormat === 'timestamped_text'}>带时间戳的文本</option>
+                <select class="form-control" name="copyFormat" .value=${this.settings.copyFormat} @change=${this.handleFieldChange}>
+                    <option value="readable_text">纯文本（适合阅读）</option>
+                    <option value="timestamped_text">带时间戳的文本</option>
                 </select>
                 <p class="hint">点击面板标题栏的复制按钮时使用的格式。</p>
             </div>
             
             <div class="form-group">
                 <label>下载格式</label>
-                <select class="form-control" name="downloadFormat" @change=${this.handleFieldChange}>
-                    <option value="txt" ?selected=${this.settings.downloadFormat === 'txt'}>TXT 纯文本</option>
-                    <option value="srt" ?selected=${this.settings.downloadFormat === 'srt'}>SRT 字幕文件</option>
+                <select class="form-control" name="downloadFormat" .value=${this.settings.downloadFormat} @change=${this.handleFieldChange}>
+                    <option value="txt">TXT 纯文本</option>
+                    <option value="srt">SRT 字幕文件</option>
                 </select>
                 <p class="hint">点击面板标题栏的下载按钮时使用的格式。</p>
             </div>
