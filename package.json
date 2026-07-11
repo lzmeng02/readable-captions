@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "npm run build && vite build --watch --mode development",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc && vite build --config vite.config.ts && vite build --config vite.background.config.ts && vite build --config vite.options.config.ts && node copy-manifest.mjs"
