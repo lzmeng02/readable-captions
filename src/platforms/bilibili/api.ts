@@ -128,6 +128,21 @@ function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
     return results;
 }
 
+function requireSubtitleItems(subtitles: unknown[], endpoint: string): BilibiliSubtitleItem[] {
+    return subtitles.map((item) => {
+        const subtitle = asRecord(item);
+        const subtitleUrl = subtitle ? readString(subtitle, "subtitle_url") : undefined;
+        if (!subtitle || !subtitleUrl?.trim()) {
+            throw new BilibiliApiError("Bilibili WBI response contains an invalid subtitle item.", endpoint);
+        }
+
+        return {
+            lan_doc: readString(subtitle, "lan_doc") || "未知语言",
+            subtitle_url: normalizeUrl(subtitleUrl),
+        };
+    });
+}
+
 export function getBiliVideoId(url: string): string | null {
     let parsed: URL;
     try {
@@ -196,7 +211,7 @@ export async function fetchBilibiliViewInfo(videoUrl: string, signal?: AbortSign
         throw new BilibiliApiError("Bilibili view response is missing aid/cid.", view.toString());
     }
 
-    const availableSubtitles = part === 1
+    const availableSubtitles = part === 1 && cid === defaultCid
         ? getSubtitleItems(getArray(getNestedRecord(data, "subtitle") ?? {}, "list"))
         : [];
     const subtitleUrl = availableSubtitles.length > 0 ? availableSubtitles[0].subtitle_url : undefined;
@@ -219,12 +234,18 @@ export async function fetchBilibiliAiSubtitleUrl(
     wbi.searchParams.set("cid", String(cid));
     wbi.searchParams.set("_t", String(Date.now()));
 
-    const root = requireBilibiliEnvelope(await fetchJson(wbi.toString(), "include", signal), wbi.toString());
-    const data = getNestedRecord(root, "data") ?? {};
-    const subtitle = getNestedRecord(data, "subtitle") ?? {};
-    const subtitles = getArray(subtitle, "subtitles");
+    const endpoint = wbi.toString();
+    const root = requireBilibiliEnvelope(await fetchJson(endpoint, "include", signal), endpoint);
+    const data = getNestedRecord(root, "data");
+    if (!data) throw new BilibiliApiError("Bilibili WBI response has no data.", endpoint);
+    const subtitle = getNestedRecord(data, "subtitle");
+    if (!subtitle) throw new BilibiliApiError("Bilibili WBI response has no subtitle metadata.", endpoint);
+    const subtitles = subtitle["subtitles"];
+    if (!Array.isArray(subtitles)) {
+        throw new BilibiliApiError("Bilibili WBI response has no subtitles array.", endpoint);
+    }
 
-    return getSubtitleItems(subtitles);
+    return requireSubtitleItems(subtitles, endpoint);
 }
 
 export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string, signal?: AbortSignal): Promise<{

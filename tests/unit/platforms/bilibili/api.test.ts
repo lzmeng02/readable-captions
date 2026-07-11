@@ -95,6 +95,23 @@ describe("fetchBilibiliViewInfo", () => {
         expect(result?.subtitleUrl).toBeUndefined();
     });
 
+    it("does not expose top-level p=1 subtitles when the selected page cid differs", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+            code: 0,
+            data: {
+                aid: 7,
+                bvid: "BV1abc",
+                cid: 11,
+                pages: [{ cid: 22 }],
+                subtitle: { list: [{ lan_doc: "Chinese", subtitle_url: "//p1.example/sub.json" }] },
+            },
+        })));
+
+        const result = await fetchBilibiliViewInfo("https://www.bilibili.com/video/BV1abc");
+        expect(result).toMatchObject({ cid: 22, defaultCid: 11, availableSubtitles: [] });
+        expect(result?.subtitleUrl).toBeUndefined();
+    });
+
     it("rejects an out-of-range selected part instead of falling back to p=1", async () => {
         vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
             code: 0,
@@ -151,6 +168,59 @@ describe("Bilibili API envelopes", () => {
             "/x/player/wbi/v2",
             -400,
         );
+    });
+
+    it.each([
+        ["missing data", { code: 0 }],
+        ["null data", { code: 0, data: null }],
+        ["missing subtitle", { code: 0, data: {} }],
+        ["missing subtitles", { code: 0, data: { subtitle: {} } }],
+        ["null subtitles", { code: 0, data: { subtitle: { subtitles: null } } }],
+        ["non-array subtitles", { code: 0, data: { subtitle: { subtitles: {} } } }],
+    ])("rejects a WBI response with %s", async (_description, payload) => {
+        vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(payload)));
+
+        await expectApiError(
+            fetchBilibiliAiSubtitleUrl(7, 11, "BV1abc"),
+            "/x/player/wbi/v2",
+        );
+    });
+
+    it.each([
+        ["a missing URL", {}],
+        ["an empty URL", { subtitle_url: "" }],
+        ["a non-record entry", null],
+    ])("rejects a non-empty WBI subtitle list containing %s", async (_description, item) => {
+        vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+            code: 0,
+            data: { subtitle: { subtitles: [item] } },
+        })));
+
+        await expectApiError(
+            fetchBilibiliAiSubtitleUrl(7, 11, "BV1abc"),
+            "/x/player/wbi/v2",
+        );
+    });
+
+    it("accepts an explicit empty WBI subtitle list", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+            code: 0,
+            data: { subtitle: { subtitles: [] } },
+        })));
+
+        await expect(fetchBilibiliAiSubtitleUrl(7, 11, "BV1abc")).resolves.toEqual([]);
+    });
+
+    it("uses the fallback language for a usable WBI subtitle without lan_doc", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+            code: 0,
+            data: { subtitle: { subtitles: [{ subtitle_url: "//wbi.example/sub.json" }] } },
+        })));
+
+        await expect(fetchBilibiliAiSubtitleUrl(7, 11, "BV1abc")).resolves.toEqual([{
+            lan_doc: "未知语言",
+            subtitle_url: "https://wbi.example/sub.json",
+        }]);
     });
 });
 

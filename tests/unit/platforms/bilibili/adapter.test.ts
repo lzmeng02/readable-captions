@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getBilibiliTranscript } from "../../../../src/platforms/bilibili/adapter";
+import { BilibiliApiError } from "../../../../src/platforms/bilibili/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -47,6 +48,43 @@ function wbiFixture(subtitleUrl?: string): unknown {
 }
 
 describe("getBilibiliTranscript", () => {
+    it("uses selected-page WBI for p=1 when the top-level cid differs", async () => {
+        const calls: URL[] = [];
+        vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+            const url = new URL(String(input));
+            calls.push(url);
+            if (url.pathname === "/x/web-interface/view") return jsonResponse({
+                code: 0,
+                data: {
+                    aid: 7,
+                    bvid: "BV1abc",
+                    cid: 11,
+                    pages: [{ cid: 22 }],
+                    subtitle: {
+                        list: [{ lan_doc: "Chinese", subtitle_url: "//p1.example/sub.json" }],
+                    },
+                },
+            });
+            if (url.pathname === "/x/player/wbi/v2") return jsonResponse(wbiFixture("//wbi.example/sub.json"));
+            if (url.hostname === "p1.example") return jsonResponse({
+                body: [{ from: 0, to: 1, content: "wrong P1 transcript" }],
+            });
+            if (url.hostname === "wbi.example") return jsonResponse({
+                body: [{ from: 1, to: 2, content: "selected cid transcript" }],
+            });
+            throw new Error(`Unexpected URL ${url}`);
+        }));
+
+        const result = await getBilibiliTranscript("https://www.bilibili.com/video/BV1abc");
+        expect(result).toMatchObject({
+            cid: 22,
+            source: "ai_wbi",
+            transcript: [{ from: 1, to: 2, content: "selected cid transcript" }],
+        });
+        expect(calls.find((url) => url.pathname === "/x/player/wbi/v2")?.searchParams.get("cid")).toBe("22");
+        expect(calls.some((url) => url.hostname === "p1.example")).toBe(false);
+    });
+
     it("loads the selected part through WBI instead of using p=1 view subtitles", async () => {
         const calls: URL[] = [];
         vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -109,6 +147,22 @@ describe("getBilibiliTranscript", () => {
 
         await expect(getBilibiliTranscript("https://www.bilibili.com/video/BV1abc"))
             .resolves.toMatchObject({ transcript: null, source: "none", aid: 7, cid: 11 });
+    });
+
+    it("rejects malformed WBI metadata instead of reporting no subtitles", async () => {
+        vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+            const url = new URL(String(input));
+            if (url.pathname === "/x/web-interface/view") return jsonResponse(viewFixture());
+            if (url.pathname === "/x/player/wbi/v2") return jsonResponse({ code: 0, data: null });
+            throw new Error(`Unexpected URL ${url}`);
+        }));
+
+        const error = await getBilibiliTranscript("https://www.bilibili.com/video/BV1abc")
+            .catch((reason: unknown) => reason);
+        expect(error).toBeInstanceOf(BilibiliApiError);
+        expect(error).toMatchObject({
+            endpoint: expect.stringContaining("/x/player/wbi/v2"),
+        });
     });
 
     it("rejects when the final selected subtitle body is malformed", async () => {
