@@ -14,5 +14,5 @@ export type PlatformTranscriptResult = {
 export interface PlatformAdapter {
     platformId: string;
     matches(url: string): boolean;
-    getTranscript(url: string): Promise<PlatformTranscriptResult>;
+    getTranscript(url: string, signal?: AbortSignal): Promise<PlatformTranscriptResult>;
 }
