@@ -195,6 +195,7 @@ export function mountPanel(
             onError: (err: Error) => {
                 if (!isCurrentRequest()) return;
                 state.requestVersion += 1;
+                state.text = null;
                 state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
                 state.isGenerating = false;
                 state.activeAbort = null;

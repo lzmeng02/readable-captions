@@ -293,6 +293,29 @@ describe("mountPanel lifecycle", () => {
         await Promise.resolve();
         expect(mocks.copyMarkdownText).toHaveBeenCalledWith("# overview");
     });
+
+    it("does not export partial generated text after a terminal error", async () => {
+        document.title = "Failed generation_哔哩哔哩_bilibili";
+        vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:download");
+        vi.spyOn(window, "setTimeout").mockImplementation(() => 0);
+        let downloadedFilename = "";
+        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+            downloadedFilename = this.download;
+        });
+        const { host } = mountReadyPanel();
+        clickTab(host, "overview");
+        const generation = mocks.generationOptions.at(-1)!;
+        generation.onToken("# partial output");
+        generation.onError(new Error("generation failed"));
+
+        clickAction(host, "复制当前内容");
+        clickAction(host, "下载当前内容");
+        await Promise.resolve();
+
+        expect.soft(host.shadowRoot?.textContent).toContain("generation failed");
+        expect.soft(mocks.copyMarkdownText).not.toHaveBeenCalled();
+        expect.soft(downloadedFilename).toBe("");
+    });
 });
 
 describe("mountPanel subtitle language changes", () => {
