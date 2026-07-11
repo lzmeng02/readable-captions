@@ -70,6 +70,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
 
     const port = portOrError;
     let finished = false;
+    let accumulatedText = "";
 
     const disconnectPort = (): void => {
         try {
@@ -86,6 +87,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
                 return;
             }
 
+            finished = true;
             const cancelMessage: GenerationStreamClientMessage = { type: "cancel" };
             try {
                 port.postMessage(cancelMessage);
@@ -103,7 +105,8 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
         }
 
         if (message.type === "token") {
-            options.onToken(message.text);
+            accumulatedText += message.text;
+            options.onToken(accumulatedText);
             return;
         }
 

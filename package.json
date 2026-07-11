@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "npm run build && vite build --watch --mode development",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc && vite build --config vite.config.ts && vite build --config vite.background.config.ts && vite build --config vite.options.config.ts && node copy-manifest.mjs"
   },
   "dependencies": {
@@ -16,7 +18,9 @@
     "@types/dompurify": "^3.0.5",
     "@types/marked": "^5.0.2",
     "@types/node": "^25.3.0",
+    "jsdom": "^29.1.1",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.10"
   }
 }

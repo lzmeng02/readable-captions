@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   build: {
     lib: {
       entry: resolve(__dirname, "src/content.ts"),
@@ -10,11 +10,11 @@ export default defineConfig({
       fileName: () => "content.js"
     },
     outDir: "dist",
-    emptyOutDir: true,
+    emptyOutDir: mode !== "development",
     rollupOptions: {
       output: {
         inlineDynamicImports: true
       }
     }
   }
-});
+}));

@@ -1,4 +1,5 @@
 import type { ExtensionSettings } from "../settings/types";
+import { consumeChatSse, createChatStreamState, finalizeChatSse } from "./sse";
 import type { GenerationMetadata, GenerationRequest, GenerationTask } from "./types";
 
 type ChatMessage = {
@@ -6,20 +7,37 @@ type ChatMessage = {
     content: string;
 };
 
+type ChatCompletionRequestBody = {
+    model: string;
+    messages: ChatMessage[];
+    stream: true;
+    thinking?: { type: "enabled" };
+    reasoning_effort?: "high";
+};
+
 type StreamGenerationFromApiOptions = {
     settings: ExtensionSettings;
     request: GenerationRequest;
     signal: AbortSignal;
-    onToken: (partialText: string) => void;
+    onToken: (deltaText: string) => void;
 };
 
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 const DEFAULT_REASONING_EFFORT = "high";
-const DEFAULT_EXTRA_BODY = {
-    thinking: {
-        type: "enabled",
-    },
-} as const;
+const DEFAULT_DEEPSEEK_THINKING = { type: "enabled" } as const;
+
+function buildChatCompletionBody(
+    provider: ExtensionSettings["generationProvider"],
+    model: string,
+    messages: ChatMessage[],
+): ChatCompletionRequestBody {
+    const body: ChatCompletionRequestBody = { model, messages, stream: true };
+    if (provider === "deepseek") {
+        body.thinking = DEFAULT_DEEPSEEK_THINKING;
+        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
+    }
+    return body;
+}
 
 const GENERATOR_PROMPT = `
 你是 Readable Captions 的 Overview 生成器。
@@ -228,68 +246,6 @@ function getApiErrorMessage(value: unknown): string | null {
     return typeof message === "string" && message.length > 0 ? message : null;
 }
 
-function getChunkDelta(value: unknown): string | null {
-    if (typeof value !== "object" || value === null) {
-        return null;
-    }
-
-    const choices = (value as Record<string, unknown>).choices;
-    if (!Array.isArray(choices)) {
-        return null;
-    }
-
-    const firstChoice = choices[0];
-    if (typeof firstChoice !== "object" || firstChoice === null) {
-        return null;
-    }
-
-    const delta = (firstChoice as Record<string, unknown>).delta;
-    if (typeof delta !== "object" || delta === null) {
-        return null;
-    }
-
-    const content = (delta as Record<string, unknown>).content;
-    return typeof content === "string" ? content : null;
-}
-
-function parseSseEvent(eventText: string): unknown[] {
-    const payloads: unknown[] = [];
-    const lines = eventText.split(/\r?\n/);
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) {
-            continue;
-        }
-
-        const data = trimmed.slice(5).trimStart();
-        if (!data || data === "[DONE]") {
-            continue;
-        }
-
-        try {
-            payloads.push(JSON.parse(data));
-        } catch {
-            // Ignore malformed SSE chunks. The stream can continue with later chunks.
-        }
-    }
-
-    return payloads;
-}
-
-function processSseBuffer(buffer: string, onPayload: (payload: unknown) => void): string {
-    const events = buffer.split(/\r?\n\r?\n/);
-    const pending = events.pop() ?? "";
-
-    for (const eventText of events) {
-        for (const payload of parseSseEvent(eventText)) {
-            onPayload(payload);
-        }
-    }
-
-    return pending;
-}
-
 export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
     const apiKey = options.settings.generationApiKey.trim();
     if (!apiKey) {
@@ -304,13 +260,11 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-            model: resolveModel(options.settings, options.request.task),
+        body: JSON.stringify(buildChatCompletionBody(
+            options.settings.generationProvider,
+            resolveModel(options.settings, options.request.task),
             messages,
-            reasoning_effort: DEFAULT_REASONING_EFFORT,
-            extra_body: DEFAULT_EXTRA_BODY,
-            stream: true,
-        }),
+        )),
         signal: options.signal,
     });
 
@@ -326,18 +280,7 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
     }
 
     const decoder = new TextDecoder();
-    let accumulated = "";
-    let buffer = "";
-
-    const handlePayload = (payload: unknown): void => {
-        const delta = getChunkDelta(payload);
-        if (!delta) {
-            return;
-        }
-
-        accumulated += delta;
-        options.onToken(accumulated);
-    };
+    const streamState = createChatStreamState();
 
     while (true) {
         const { done, value } = await reader.read();
@@ -345,14 +288,14 @@ export async function streamGenerationFromApi(options: StreamGenerationFromApiOp
             break;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-        buffer = processSseBuffer(buffer, handlePayload);
+        for (const update of consumeChatSse(streamState, decoder.decode(value, { stream: true }))) {
+            options.onToken(update.delta);
+        }
     }
 
-    buffer += decoder.decode();
-    for (const payload of parseSseEvent(buffer)) {
-        handlePayload(payload);
+    for (const update of consumeChatSse(streamState, decoder.decode())) {
+        options.onToken(update.delta);
     }
 
-    return accumulated;
+    return finalizeChatSse(streamState);
 }

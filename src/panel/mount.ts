@@ -1,7 +1,6 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode } from "./panel-view";
-import type { Transcript } from "../transcript/model";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { watchPublicSettings } from "../settings/public-client";
@@ -16,18 +15,11 @@ import {
 } from "./export-utils";
 import { fetchBilibiliSubtitleBody } from "../platforms/bilibili/api";
 import { normalizeBilibiliTranscript } from "../platforms/bilibili/normalize";
+import type { PanelCallbacks, PanelData, PanelHandle } from "./types";
+import { createRenderScheduler } from "./render-scheduler";
+import { extractVideoTitle } from "./title-utils";
 
 const cleanupKey = Symbol("rcPanelCleanup");
-
-type PanelData = {
-    transcript: Transcript | null;
-    source: string;
-    availableSubtitles?: { lan_doc: string; subtitle_url: string }[];
-    subtitleUrl?: string;
-    aid?: number;
-    cid?: number;
-    isLoading?: boolean;
-};
 
 type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
@@ -38,6 +30,7 @@ type GenerationState = {
     isGenerating: boolean;
     error: string | null;
     activeAbort: AbortController | null;
+    requestVersion: number;
 };
 
 async function openExtensionOptionsPage(): Promise<void> {
@@ -59,6 +52,7 @@ function createGenerationState(): GenerationState {
         isGenerating: false,
         error: null,
         activeAbort: null,
+        requestVersion: 0,
     };
 }
 
@@ -66,13 +60,9 @@ function isPanelGenerationMode(mode: Mode): mode is Exclude<GenerationTask, "not
     return mode === "overview" || mode === "intensive";
 }
 
-function extractVideoTitle(): string {
-    return document.title.split("_哔哩")[0]?.split("-")[0]?.trim() || "bilibili_video";
-}
-
 function buildGenerationMetadata(data: PanelData): GenerationMetadata {
     return {
-        title: extractVideoTitle(),
+        title: extractVideoTitle(document.title),
         url: location.href,
         aid: data.aid,
         cid: data.cid,
@@ -84,9 +74,15 @@ function getGenerationFileSuffix(mode: Exclude<Mode, "original">): string {
     return mode === "overview" ? "overview" : "intensive";
 }
 
-export function mountPanel(host: HTMLElement, data: PanelData): void {
+export function mountPanel(
+    host: HTMLElement,
+    initialData: PanelData,
+    callbacks: PanelCallbacks = {},
+): PanelHandle {
     const managedHost = host as HostWithCleanup;
     managedHost[cleanupKey]?.();
+
+    let data = initialData;
 
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
 
@@ -107,6 +103,10 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     let hasLoadedSettings = false;
     let copyFormat: PublicExtensionSettings["copyFormat"] = "readable_text";
     let downloadFormat: PublicExtensionSettings["downloadFormat"] = "txt";
+    let subtitleRequestId = 0;
+    let subtitleController: AbortController | null = null;
+    let pendingSubtitleUrl: string | null = null;
+    let subtitleError: string | null = null;
 
     const generationStates: Record<GenerationTask, GenerationState> = {
         overview: createGenerationState(),
@@ -115,10 +115,25 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     };
     let stopWatchingSettings: (() => void) | null = null;
 
+    const isGenerationTaskVisible = (task: GenerationTask): boolean =>
+        isNoteOpen ? task === "note" : task !== "note" && mode === task;
+
+    const invalidateSubtitleRequest = (): number => {
+        subtitleRequestId += 1;
+        const activeController = subtitleController;
+        subtitleController = null;
+        activeController?.abort();
+        pendingSubtitleUrl = null;
+        subtitleError = null;
+        return subtitleRequestId;
+    };
+
     const clearGenerationState = (task: GenerationTask): void => {
         const state = generationStates[task];
-        state.activeAbort?.abort();
+        state.requestVersion += 1;
+        const activeAbort = state.activeAbort;
         state.activeAbort = null;
+        activeAbort?.abort();
         state.text = null;
         state.isGenerating = false;
         state.error = null;
@@ -143,42 +158,68 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             return;
         }
 
-        state.activeAbort?.abort();
+        state.requestVersion += 1;
+        const requestVersion = state.requestVersion;
+        const activeAbort = state.activeAbort;
+        state.activeAbort = null;
+        activeAbort?.abort();
         state.isGenerating = true;
         state.text = null;
         state.error = null;
         renderPanel();
 
-        state.activeAbort = streamGeneration({
+        const isCurrentRequest = (): boolean => !isDisposed && state.requestVersion === requestVersion;
+        const controller = streamGeneration({
             request: {
                 transcript: data.transcript,
                 task,
                 metadata: buildGenerationMetadata(data),
             },
             onToken: (partialText: string) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
                 state.text = partialText;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.schedule();
+                }
             },
             onDone: (fullText: string) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
+                state.requestVersion += 1;
                 state.text = fullText;
                 state.isGenerating = false;
                 state.activeAbort = null;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.flush();
+                }
             },
             onError: (err: Error) => {
-                if (isDisposed) return;
+                if (!isCurrentRequest()) return;
+                state.requestVersion += 1;
+                state.text = null;
                 state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
                 state.isGenerating = false;
                 state.activeAbort = null;
-                renderPanel();
+                if (isGenerationTaskVisible(task)) {
+                    generationRenderScheduler.flush();
+                }
             },
         });
+
+        if (isCurrentRequest()) {
+            state.activeAbort = controller;
+        } else {
+            controller.abort();
+        }
     };
 
     const maybeGenerateForMode = (): boolean => {
-        if (!isPanelGenerationMode(mode) || !generationEnabled || !data.transcript || data.transcript.length === 0) {
+        if (
+            data.status !== "ready"
+            || !isPanelGenerationMode(mode)
+            || !generationEnabled
+            || !data.transcript
+            || data.transcript.length === 0
+        ) {
             return false;
         }
 
@@ -230,7 +271,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
     const handleDownloadNote = (): void => {
         const note = generationStates.note.text;
         if (!note) return;
-        downloadMarkdownNote(note, extractVideoTitle());
+        downloadMarkdownNote(note, extractVideoTitle(document.title));
     };
 
     const handleCopy = async (): Promise<void> => {
@@ -249,33 +290,74 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
             if (!text) return;
-            downloadMarkdownText(text, extractVideoTitle(), getGenerationFileSuffix(mode));
+            downloadMarkdownText(text, extractVideoTitle(document.title), getGenerationFileSuffix(mode));
             return;
         }
 
         if (!data.transcript || data.transcript.length === 0) return;
-        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle());
+        downloadTranscript(data.transcript, downloadFormat, extractVideoTitle(document.title));
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
-        if (!newUrl || newUrl === data.subtitleUrl) return;
+        if (!newUrl || isDisposed) return;
+
+        const requestId = invalidateSubtitleRequest();
+        if (newUrl === data.subtitleUrl) {
+            renderPanel();
+            return;
+        }
+
+        const controller = new AbortController();
+        subtitleController = controller;
+        pendingSubtitleUrl = newUrl;
+        renderPanel();
 
         try {
-            const { body } = await fetchBilibiliSubtitleBody(newUrl);
-            data.transcript = normalizeBilibiliTranscript(body);
-            data.subtitleUrl = newUrl;
+            const { body } = await fetchBilibiliSubtitleBody(newUrl, controller.signal);
+            const transcript = normalizeBilibiliTranscript(body);
+            if (!transcript || transcript.length === 0) throw new Error("Invalid subtitle body.");
+            if (requestId !== subtitleRequestId || isDisposed) return;
+
+            data = {
+                ...data,
+                transcript,
+                subtitleUrl: newUrl,
+                status: "ready",
+            };
+            subtitleController = null;
+            pendingSubtitleUrl = null;
+            subtitleError = null;
             clearAllGenerationStates();
             isNoteOpen = false;
+            callbacks.onTranscriptChange?.({
+                transcript,
+                source: data.source,
+                subtitleUrl: newUrl,
+                aid: data.aid,
+                cid: data.cid,
+                availableSubtitles: data.availableSubtitles,
+            });
 
             if (!maybeGenerateForMode()) {
                 renderPanel();
             }
         } catch (err) {
-            console.error("Failed to fetch new language subtitle", err);
+            if (requestId !== subtitleRequestId || isDisposed) return;
+            subtitleController = null;
+            pendingSubtitleUrl = null;
+            subtitleError = err instanceof Error && err.message
+                ? err.message
+                : "Failed to load subtitles.";
+            renderPanel();
         }
     };
 
-    const renderPanel = (): void => {
+    const toggleLang = (): void => {
+        uiLanguage = uiLanguage === "zh" ? "en" : "zh";
+        renderPanel();
+    };
+
+    const renderPanelNow = (): void => {
         if (isDisposed) {
             return;
         }
@@ -301,6 +383,7 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
             handleCopy,
             handleDownload,
             handleSubtitleLanguageChange,
+            { pendingSubtitleUrl, subtitleError },
             { generationEnabled },
             {
                 isOpen: isNoteOpen,
@@ -314,6 +397,13 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
                 onDownload: handleDownloadNote,
             },
         ), shadow);
+    };
+
+    const generationRenderScheduler = createRenderScheduler(renderPanelNow);
+
+    const renderPanel = (): void => {
+        generationRenderScheduler.cancel();
+        renderPanelNow();
     };
 
     const setMode = (nextMode: Mode, userSelected = false): void => {
@@ -371,13 +461,6 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         renderPanel();
     };
 
-    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
-
-    const toggleLang = (): void => {
-        uiLanguage = uiLanguage === "zh" ? "en" : "zh";
-        renderPanel();
-    };
-
     const handlePointerDown = (event: PointerEvent): void => {
         const path = event.composedPath();
         const isInside = path.some((node: any) => node?.classList?.contains("more-actions-wrapper"));
@@ -386,15 +469,41 @@ export function mountPanel(host: HTMLElement, data: PanelData): void {
         }
     };
 
-    document.addEventListener("pointerdown", handlePointerDown, true);
-
-    managedHost[cleanupKey] = (): void => {
+    const dispose = (): void => {
+        if (isDisposed) return;
         isDisposed = true;
+        generationRenderScheduler.cancel();
+        invalidateSubtitleRequest();
         clearAllGenerationStates();
         stopWatchingSettings?.();
         stopWatchingSettings = null;
         document.removeEventListener("pointerdown", handlePointerDown, true);
     };
 
+    const handle: PanelHandle = {
+        updateData(next) {
+            if (isDisposed) return;
+            data = next;
+            if (!maybeGenerateForMode()) renderPanel();
+        },
+        reset(next) {
+            if (isDisposed) return;
+            generationRenderScheduler.cancel();
+            invalidateSubtitleRequest();
+            clearAllGenerationStates();
+            data = next;
+            mode = "original";
+            hasUserSelectedMode = false;
+            isNoteOpen = false;
+            renderPanel();
+        },
+        dispose,
+    };
+
+    managedHost[cleanupKey] = dispose;
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
+
     renderPanel();
+    return handle;
 }

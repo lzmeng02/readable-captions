@@ -3,12 +3,29 @@ export type BilibiliSubtitleItem = {
     subtitle_url: string;
 };
 
-type BilibiliViewInfo = {
-    aid?: number;
+export class BilibiliApiError extends Error {
+    readonly endpoint: string;
+    readonly code?: number;
+
+    constructor(
+        message: string,
+        endpoint: string,
+        code?: number,
+    ) {
+        super(message);
+        this.name = "BilibiliApiError";
+        this.endpoint = endpoint;
+        this.code = code;
+    }
+}
+
+export type BilibiliViewInfo = {
+    aid: number;
     bvid?: string;
-    cid?: number;
+    cid: number;
+    defaultCid: number;
     subtitleUrl?: string;
-    availableSubtitles?: BilibiliSubtitleItem[];
+    availableSubtitles: BilibiliSubtitleItem[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -36,7 +53,18 @@ function getNestedRecord(record: Record<string, unknown>, key: string): Record<s
     return asRecord(record[key]);
 }
 
-function getBiliPart(url: string): number {
+function requireBilibiliEnvelope(value: unknown, endpoint: string): Record<string, unknown> {
+    const root = asRecord(value);
+    if (!root) throw new BilibiliApiError("Invalid Bilibili API response.", endpoint);
+    const code = readNumber(root, "code");
+    if (code !== 0) {
+        const serviceMessage = readString(root, "message") ?? readString(root, "msg") ?? "Unknown error";
+        throw new BilibiliApiError(`Bilibili API error (${code ?? "invalid"}): ${serviceMessage}`, endpoint, code);
+    }
+    return root;
+}
+
+export function getBiliPart(url: string): number {
     const u = new URL(url);
     const pStr = u.searchParams.get("p");
     const p = pStr ? Number(pStr) : 1;
@@ -64,22 +92,25 @@ function normalizeAidVideoId(id: string | null): string | null {
     return `av${id}`;
 }
 
-function shouldIncludeCookies(url: string): boolean {
-    return new URL(url).hostname === "api.bilibili.com";
-}
-
-async function fetchJson(url: string): Promise<unknown> {
-    const includeCookies = shouldIncludeCookies(url);
-
+async function fetchJson(
+    url: string,
+    credentials: RequestCredentials,
+    signal?: AbortSignal,
+): Promise<unknown> {
     const res = await fetch(url, {
-        credentials: includeCookies ? "include" : "omit",
+        credentials,
+        signal,
     });
 
     if (!res.ok) {
         throw new Error(`HTTP ${res.status} for ${url}`);
     }
 
-    return res.json();
+    try {
+        return await res.json();
+    } catch {
+        throw new BilibiliApiError(`Invalid JSON response from ${url}.`, url);
+    }
 }
 
 function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
@@ -90,11 +121,26 @@ function getSubtitleItems(subtitles: unknown[]): BilibiliSubtitleItem[] {
             const subtitle_url = readString(subtitle, "subtitle_url");
             const lan_doc = readString(subtitle, "lan_doc") || "未知语言";
             if (subtitle_url) {
-                results.push({ lan_doc, subtitle_url });
+                results.push({ lan_doc, subtitle_url: normalizeUrl(subtitle_url) });
             }
         }
     }
     return results;
+}
+
+function requireSubtitleItems(subtitles: unknown[], endpoint: string): BilibiliSubtitleItem[] {
+    return subtitles.map((item) => {
+        const subtitle = asRecord(item);
+        const subtitleUrl = subtitle ? readString(subtitle, "subtitle_url") : undefined;
+        if (!subtitle || !subtitleUrl?.trim()) {
+            throw new BilibiliApiError("Bilibili WBI response contains an invalid subtitle item.", endpoint);
+        }
+
+        return {
+            lan_doc: readString(subtitle, "lan_doc") || "未知语言",
+            subtitle_url: normalizeUrl(subtitleUrl),
+        };
+    });
 }
 
 export function getBiliVideoId(url: string): string | null {
@@ -126,7 +172,12 @@ export function getBiliVideoId(url: string): string | null {
     return null;
 }
 
-export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliViewInfo | null> {
+export function getBilibiliRouteKey(url: string): string | null {
+    const id = getBiliVideoId(url);
+    return id ? `bilibili:${id}:p=${getBiliPart(url)}` : null;
+}
+
+export async function fetchBilibiliViewInfo(videoUrl: string, signal?: AbortSignal): Promise<BilibiliViewInfo | null> {
     const id = getBiliVideoId(videoUrl);
     if (!id) {
         return null;
@@ -139,26 +190,41 @@ export async function fetchBilibiliViewInfo(videoUrl: string): Promise<BilibiliV
         view.searchParams.set("bvid", id);
     }
 
-    const viewJson = await fetchJson(view.toString());
-    const root = asRecord(viewJson) ?? {};
-    const data = getNestedRecord(root, "data") ?? {};
+    const root = requireBilibiliEnvelope(await fetchJson(view.toString(), "include", signal), view.toString());
+    const data = getNestedRecord(root, "data");
+    if (!data) throw new BilibiliApiError("Bilibili view response has no data.", view.toString());
 
     const aid = readNumber(data, "aid");
     const bvid = readString(data, "bvid");
     const pages = getArray(data, "pages");
-    const pageIndex = getBiliPart(videoUrl) - 1;
-    const page = asRecord(pages[pageIndex]) ?? asRecord(pages[0]) ?? {};
-    const cid = readNumber(page, "cid");
+    const part = getBiliPart(videoUrl);
+    const firstPage = asRecord(pages[0]);
+    const selectedPage = asRecord(pages[part - 1]);
+    const defaultCid = readNumber(data, "cid") ?? (firstPage ? readNumber(firstPage, "cid") : undefined);
+    if (part > 1 && !selectedPage) {
+        throw new BilibiliApiError(`Bilibili view response has no part ${part}.`, view.toString());
+    }
+    const cid = selectedPage
+        ? readNumber(selectedPage, "cid")
+        : defaultCid;
+    if (aid === undefined || cid === undefined || defaultCid === undefined) {
+        throw new BilibiliApiError("Bilibili view response is missing aid/cid.", view.toString());
+    }
 
-    const subtitle = getNestedRecord(data, "subtitle") ?? {};
-    const subtitleList = getArray(subtitle, "list");
-    const availableSubtitles = getSubtitleItems(subtitleList);
+    const availableSubtitles = part === 1 && cid === defaultCid
+        ? getSubtitleItems(getArray(getNestedRecord(data, "subtitle") ?? {}, "list"))
+        : [];
     const subtitleUrl = availableSubtitles.length > 0 ? availableSubtitles[0].subtitle_url : undefined;
 
-    return { aid, bvid, cid, subtitleUrl, availableSubtitles };
+    return { aid, bvid, cid, defaultCid, subtitleUrl, availableSubtitles };
 }
 
-export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number, bvid?: string): Promise<BilibiliSubtitleItem[]> {
+export async function fetchBilibiliAiSubtitleUrl(
+    aid: number,
+    cid: number,
+    bvid?: string,
+    signal?: AbortSignal,
+): Promise<BilibiliSubtitleItem[]> {
     const wbi = new URL("https://api.bilibili.com/x/player/wbi/v2");
     if (bvid) {
         wbi.searchParams.set("bvid", bvid);
@@ -168,21 +234,26 @@ export async function fetchBilibiliAiSubtitleUrl(aid: number, cid: number, bvid?
     wbi.searchParams.set("cid", String(cid));
     wbi.searchParams.set("_t", String(Date.now()));
 
-    const wbiJson = await fetchJson(wbi.toString());
-    const root = asRecord(wbiJson) ?? {};
-    const data = getNestedRecord(root, "data") ?? {};
-    const subtitle = getNestedRecord(data, "subtitle") ?? {};
-    const subtitles = getArray(subtitle, "subtitles");
+    const endpoint = wbi.toString();
+    const root = requireBilibiliEnvelope(await fetchJson(endpoint, "include", signal), endpoint);
+    const data = getNestedRecord(root, "data");
+    if (!data) throw new BilibiliApiError("Bilibili WBI response has no data.", endpoint);
+    const subtitle = getNestedRecord(data, "subtitle");
+    if (!subtitle) throw new BilibiliApiError("Bilibili WBI response has no subtitle metadata.", endpoint);
+    const subtitles = subtitle["subtitles"];
+    if (!Array.isArray(subtitles)) {
+        throw new BilibiliApiError("Bilibili WBI response has no subtitles array.", endpoint);
+    }
 
-    return getSubtitleItems(subtitles);
+    return requireSubtitleItems(subtitles, endpoint);
 }
 
-export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string): Promise<{
+export async function fetchBilibiliSubtitleBody(rawSubtitleUrl: string, signal?: AbortSignal): Promise<{
     subtitleUrl: string;
     body: unknown;
 }> {
     const subtitleUrl = normalizeUrl(rawSubtitleUrl);
-    const subtitleJson = await fetchJson(subtitleUrl);
+    const subtitleJson = await fetchJson(subtitleUrl, "omit", signal);
     const root = asRecord(subtitleJson) ?? {};
 
     return {
