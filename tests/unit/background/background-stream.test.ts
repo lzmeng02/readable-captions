@@ -41,6 +41,25 @@ function createDependencies(
 }
 
 describe("attachGenerationStreamPort", () => {
+    it("does not start keepalive or a provider request when generation is disabled", async () => {
+        const fake = createFakeRuntimePort();
+        const keepAlive = vi.fn<KeepAliveRunner>((work) => work());
+        const streamGenerationFromApi = vi.fn(async () => "unexpected");
+        attachGenerationStreamPort(fake.port, createDependencies({
+            getSettings: vi.fn(async () => createSettings({ generationEnabled: false })),
+            keepAlive,
+            streamGenerationFromApi,
+        }));
+        fake.emitMessage({ type: "start", request: generationRequest });
+        await flushPromises();
+        expect(keepAlive).not.toHaveBeenCalled();
+        expect(streamGenerationFromApi).not.toHaveBeenCalled();
+        expect(fake.postedMessages).toEqual([{
+            type: "error",
+            message: "Generation is disabled in the extension settings.",
+        }]);
+    });
+
     it("streams API deltas and the canonical final text through one keepalive request", async () => {
         const fake = createFakeRuntimePort();
         const settings = createSettings();
