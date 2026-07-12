@@ -15,13 +15,11 @@ function canonicalFixture(): ExtensionSettings {
     return {
         ...DEFAULT_SETTINGS,
         generationProvider: "deepseek",
-        generationApiKey: "",
-        generationModels: { overview: "", intensive: "" },
         generationProviderSettings: {
             openai: { apiKey: "", models: { overview: "", intensive: "" } },
             deepseek: { apiKey: "", models: { overview: "", intensive: "" } },
         },
-    } as unknown as ExtensionSettings;
+    };
 }
 
 async function settle(app: ReadableCaptionsOptionsApp): Promise<void> {

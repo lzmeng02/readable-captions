@@ -93,11 +93,9 @@ describe("provider request selection", () => {
         const fetchMock = vi.fn(async () => createSseResponse(successfulSse));
         vi.stubGlobal("fetch", fetchMock);
         const settings = {
-            ...createSettings({
-                generationProvider: "openai",
-                generationApiKey: "wrong-global-trap",
-                generationModels: { overview: "wrong-global-model" },
-            }),
+            ...createSettings({ generationProvider: "openai" }),
+            generationApiKey: "wrong-global-trap",
+            generationModels: { overview: "wrong-global-model", intensive: "wrong-global-model" },
             generationProviderSettings: {
                 openai: { apiKey: "", models: { overview: "gpt-test", intensive: "gpt-test" } },
                 deepseek: { apiKey: "ds-test-key", models: { overview: "", intensive: "" } },

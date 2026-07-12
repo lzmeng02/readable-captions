@@ -1,19 +1,8 @@
 import type { ExtensionSettings } from "../settings/types";
+import { getGenerationProvider } from "./provider-catalog";
+import type { ProviderChatMessage } from "./provider-catalog";
 import { consumeChatSse, createChatStreamState, finalizeChatSse } from "./sse";
 import type { GenerationMetadata, GenerationRequest, GenerationTask } from "./types";
-
-type ChatMessage = {
-    role: "system" | "user";
-    content: string;
-};
-
-type ChatCompletionRequestBody = {
-    model: string;
-    messages: ChatMessage[];
-    stream: true;
-    thinking?: { type: "enabled" };
-    reasoning_effort?: "high";
-};
 
 type StreamGenerationFromApiOptions = {
     settings: ExtensionSettings;
@@ -21,23 +10,6 @@ type StreamGenerationFromApiOptions = {
     signal: AbortSignal;
     onToken: (deltaText: string) => void;
 };
-
-const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
-const DEFAULT_REASONING_EFFORT = "high";
-const DEFAULT_DEEPSEEK_THINKING = { type: "enabled" } as const;
-
-function buildChatCompletionBody(
-    provider: ExtensionSettings["generationProvider"],
-    model: string,
-    messages: ChatMessage[],
-): ChatCompletionRequestBody {
-    const body: ChatCompletionRequestBody = { model, messages, stream: true };
-    if (provider === "deepseek") {
-        body.thinking = DEFAULT_DEEPSEEK_THINKING;
-        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
-    }
-    return body;
-}
 
 const GENERATOR_PROMPT = `
 你是 Readable Captions 的 Overview 生成器。
@@ -132,18 +104,13 @@ const NOTE_PROMPT = `
 - 输出完整 Markdown，不要包裹代码块。
 `.trim();
 
-function resolveEndpoint(provider: ExtensionSettings["generationProvider"]): string {
-    return provider === "deepseek"
-        ? "https://api.deepseek.com/chat/completions"
-        : "https://api.openai.com/v1/chat/completions";
-}
-
 function resolveConfiguredModel(settings: ExtensionSettings, task: GenerationTask): string {
+    const models = settings.generationProviderSettings[settings.generationProvider].models;
     if (task === "overview") {
-        return settings.generationModels.overview;
+        return models.overview;
     }
 
-    return settings.generationModels.intensive;
+    return models.intensive;
 }
 
 function resolveModel(settings: ExtensionSettings, task: GenerationTask): string {
@@ -152,8 +119,9 @@ function resolveModel(settings: ExtensionSettings, task: GenerationTask): string
         return configuredModel;
     }
 
-    if (settings.generationProvider === "deepseek") {
-        return DEFAULT_DEEPSEEK_MODEL;
+    const defaultModel = getGenerationProvider(settings.generationProvider).defaultModel;
+    if (defaultModel) {
+        return defaultModel;
     }
 
     throw new Error("OpenAI model is not set. Please configure a model in the extension options.");
@@ -217,7 +185,7 @@ function formatMetadata(metadata: GenerationMetadata | undefined): string {
     return lines.join("\n");
 }
 
-function buildMessages(settings: ExtensionSettings, request: GenerationRequest): ChatMessage[] {
+function buildMessages(settings: ExtensionSettings, request: GenerationRequest): ProviderChatMessage[] {
     const transcriptText = request.transcript
         .map((line) => `${formatTimestamp(line.from)} ${line.content}`)
         .join("\n");
@@ -247,24 +215,24 @@ function getApiErrorMessage(value: unknown): string | null {
 }
 
 export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
-    const apiKey = options.settings.generationApiKey.trim();
+    const provider = getGenerationProvider(options.settings.generationProvider);
+    const selectedProfile = options.settings.generationProviderSettings[options.settings.generationProvider];
+    const apiKey = selectedProfile.apiKey.trim();
     if (!apiKey) {
         throw new Error("API Key is not set. Please configure it in the extension options.");
     }
 
     const messages = buildMessages(options.settings, options.request);
+    const providerRequest = provider.buildRequest({
+        apiKey,
+        model: resolveModel(options.settings, options.request.task),
+        messages,
+    });
 
-    const response = await fetch(resolveEndpoint(options.settings.generationProvider), {
+    const response = await fetch(providerRequest.url, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(buildChatCompletionBody(
-            options.settings.generationProvider,
-            resolveModel(options.settings, options.request.task),
-            messages,
-        )),
+        headers: providerRequest.headers,
+        body: JSON.stringify(providerRequest.body),
         signal: options.signal,
     });
 

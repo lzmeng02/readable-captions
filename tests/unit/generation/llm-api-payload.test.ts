@@ -13,7 +13,14 @@ async function captureBody(provider: "openai" | "deepseek"): Promise<Record<stri
     await streamGenerationFromApi({
         settings: createSettings({
             generationProvider: provider,
-            generationModels: { overview: provider === "openai" ? "gpt-4o-mini" : "" },
+            generationProviderSettings: {
+                [provider]: {
+                    models: {
+                        overview: provider === "openai" ? "gpt-4o-mini" : "",
+                        intensive: "",
+                    },
+                },
+            },
         }),
         request: generationRequest,
         signal: new AbortController().signal,

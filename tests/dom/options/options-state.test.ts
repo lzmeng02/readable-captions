@@ -30,8 +30,6 @@ function canonicalFixture(overrides: Record<string, unknown> = {}): ExtensionSet
     return {
         ...DEFAULT_SETTINGS,
         generationProvider: "deepseek",
-        generationApiKey: "",
-        generationModels: { overview: "", intensive: "" },
         generationProviderSettings: {
             openai: { apiKey: "", models: { overview: "", intensive: "" } },
             deepseek: { apiKey: "", models: { overview: "", intensive: "" } },

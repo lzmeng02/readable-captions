@@ -9,7 +9,9 @@ async function run(chunks: readonly string[]): Promise<string> {
     return streamGenerationFromApi({
         settings: createSettings({
             generationProvider: "openai",
-            generationModels: { overview: "gpt-4o-mini" },
+            generationProviderSettings: {
+                openai: { models: { overview: "gpt-4o-mini", intensive: "" } },
+            },
         }),
         request: generationRequest,
         signal: new AbortController().signal,
@@ -93,7 +95,9 @@ describe("chat completion streams", () => {
         await expect(streamGenerationFromApi({
             settings: createSettings({
                 generationProvider: "openai",
-                generationModels: { overview: "gpt-4o-mini" },
+                generationProviderSettings: {
+                    openai: { models: { overview: "gpt-4o-mini", intensive: "" } },
+                },
             }),
             request: generationRequest,
             signal: new AbortController().signal,
@@ -131,7 +135,9 @@ describe("chat completion streams", () => {
         await expect(streamGenerationFromApi({
             settings: createSettings({
                 generationProvider: "openai",
-                generationModels: { overview: "gpt-4o-mini" },
+                generationProviderSettings: {
+                    openai: { models: { overview: "gpt-4o-mini", intensive: "" } },
+                },
             }),
             request: generationRequest,
             signal: new AbortController().signal,

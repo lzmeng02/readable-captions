@@ -1,4 +1,10 @@
+import { DEFAULT_SETTINGS } from "./defaults";
 import type { ExtensionSettings, PublicExtensionSettings } from "./types";
+import {
+    COPY_FORMAT_VALUES,
+    DEFAULT_TAB_VALUES,
+    DOWNLOAD_FORMAT_VALUES,
+} from "./types";
 
 export const PUBLIC_SETTINGS_PORT = "readable-captions-public-settings";
 
@@ -22,30 +28,12 @@ function hashString(value: string): string {
     return (hash >>> 0).toString(36);
 }
 
-export const DEFAULT_PUBLIC_SETTINGS: PublicExtensionSettings = {
-    defaultTab: "original",
-    generationEnabled: true,
-    copyFormat: "readable_text",
-    downloadFormat: "txt",
-    generationSettingsKey: hashString(JSON.stringify({
-        provider: "deepseek",
-        accessMode: "api_key",
-        models: {
-            overview: "",
-            intensive: "",
-        },
-        prompts: {
-            overview: "",
-            intensive: "",
-        },
-    })),
-};
-
 function getGenerationSettingsKey(settings: ExtensionSettings): string {
+    const selectedProfile = settings.generationProviderSettings[settings.generationProvider];
+
     return hashString(JSON.stringify({
         provider: settings.generationProvider,
-        accessMode: settings.generationAccessMode,
-        models: settings.generationModels,
+        models: selectedProfile.models,
         prompts: settings.generationPromptTemplates,
     }));
 }
@@ -64,6 +52,8 @@ export function toPublicSettings(settings: ExtensionSettings): PublicExtensionSe
     };
 }
 
+export const DEFAULT_PUBLIC_SETTINGS = toPublicSettings(DEFAULT_SETTINGS);
+
 export function isPublicSettingsPortMessage(message: unknown): message is PublicSettingsPortMessage {
     if (!isRecord(message) || typeof message.type !== "string") {
         return false;
@@ -79,8 +69,11 @@ export function isPublicSettingsPortMessage(message: unknown): message is Public
 
     const settings = message.settings;
     return typeof settings.defaultTab === "string"
+        && DEFAULT_TAB_VALUES.includes(settings.defaultTab as ExtensionSettings["defaultTab"])
         && typeof settings.generationEnabled === "boolean"
         && typeof settings.copyFormat === "string"
+        && COPY_FORMAT_VALUES.includes(settings.copyFormat as ExtensionSettings["copyFormat"])
         && typeof settings.downloadFormat === "string"
+        && DOWNLOAD_FORMAT_VALUES.includes(settings.downloadFormat as ExtensionSettings["downloadFormat"])
         && typeof settings.generationSettingsKey === "string";
 }

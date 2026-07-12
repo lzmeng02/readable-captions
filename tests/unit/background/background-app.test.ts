@@ -108,7 +108,12 @@ describe("registerBackground", () => {
         expect(first.postedMessages[0]).not.toHaveProperty("settings.generationApiKey");
         expect(harness.keepAliveSignals).toEqual([]);
 
-        const updatedSettings = createSettings({ generationEnabled: false, generationApiKey: "new secret" });
+        const updatedSettings = createSettings({
+            generationEnabled: false,
+            generationProviderSettings: {
+                deepseek: { apiKey: "ds-test-key" },
+            },
+        });
         harness.emitSettings(updatedSettings);
 
         expect(first.postedMessages.at(-1)).toEqual({

@@ -7,7 +7,16 @@ import {
 } from "../../../src/settings/public";
 
 it("never exposes private generation settings to content", () => {
-    const value = toPublicSettings({ ...DEFAULT_SETTINGS, generationApiKey: "secret" });
+    const value = toPublicSettings({
+        ...DEFAULT_SETTINGS,
+        generationProviderSettings: {
+            ...DEFAULT_SETTINGS.generationProviderSettings,
+            deepseek: {
+                ...DEFAULT_SETTINGS.generationProviderSettings.deepseek,
+                apiKey: "ds-test-key",
+            },
+        },
+    });
     expect(value).not.toHaveProperty("generationApiKey");
     expect(value).not.toHaveProperty("generationProvider");
     expect(value).not.toHaveProperty("generationModels");

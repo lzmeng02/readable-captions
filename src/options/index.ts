@@ -1,9 +1,10 @@
 // src/options/index.ts
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { GENERATION_PROVIDERS, getGenerationProvider } from "../generation/provider-catalog";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
 import { getSettings, saveSettings } from "../settings/storage";
-import type { ExtensionSettings, GenerationProvider } from "../settings/types";
+import type { ExtensionSettings, GenerationModels, GenerationProvider } from "../settings/types";
 
 type TabId = "general" | "generation" | "export" | "about";
 
@@ -522,22 +523,49 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     private handleFieldChange = (event: Event): void => {
         const field = event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
         const nextValue = field instanceof HTMLInputElement && field.type === "checkbox" ? field.checked : field.value;
-        this.settings = mergeSettings({
+        this.settings = {
             ...this.settings,
             [field.name]: nextValue,
-        });
+        };
         this.statusTone = "idle";
     };
 
-    private handleGenerationModelChange = (task: keyof ExtensionSettings["generationModels"], event: Event): void => {
+    private handleGenerationApiKeyChange = (event: Event): void => {
         const field = event.currentTarget as HTMLInputElement;
-        this.settings = mergeSettings({
+        const provider = this.settings.generationProvider;
+        const selectedProfile = this.settings.generationProviderSettings[provider];
+
+        this.settings = {
             ...this.settings,
-            generationModels: {
-                ...this.settings.generationModels,
-                [task]: field.value,
+            generationProviderSettings: {
+                ...this.settings.generationProviderSettings,
+                [provider]: {
+                    ...selectedProfile,
+                    apiKey: field.value,
+                },
             },
-        });
+        };
+        this.statusTone = "idle";
+    };
+
+    private handleGenerationModelChange = (task: keyof GenerationModels, event: Event): void => {
+        const field = event.currentTarget as HTMLInputElement;
+        const provider = this.settings.generationProvider;
+        const selectedProfile = this.settings.generationProviderSettings[provider];
+
+        this.settings = {
+            ...this.settings,
+            generationProviderSettings: {
+                ...this.settings.generationProviderSettings,
+                [provider]: {
+                    ...selectedProfile,
+                    models: {
+                        ...selectedProfile.models,
+                        [task]: field.value,
+                    },
+                },
+            },
+        };
         this.statusTone = "idle";
     };
 
@@ -546,21 +574,21 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         event: Event,
     ): void => {
         const field = event.currentTarget as HTMLTextAreaElement;
-        this.settings = mergeSettings({
+        this.settings = {
             ...this.settings,
             generationPromptTemplates: {
                 ...this.settings.generationPromptTemplates,
                 [task]: field.value,
             },
-        });
+        };
         this.statusTone = "idle";
     };
 
     private setProvider(provider: GenerationProvider): void {
-        this.settings = mergeSettings({
+        this.settings = {
             ...this.settings,
             generationProvider: provider,
-        });
+        };
         this.statusTone = "idle";
     }
 
@@ -631,10 +659,9 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     }
 
     private renderGeneration() {
-        const isApiKeySet = this.settings.generationApiKey.length > 0;
-        const modelPlaceholder = this.settings.generationProvider === "openai"
-            ? "gpt-4o-mini"
-            : "deepseek-v4-flash";
+        const selectedProvider = getGenerationProvider(this.settings.generationProvider);
+        const selectedProfile = this.settings.generationProviderSettings[this.settings.generationProvider];
+        const isApiKeySet = selectedProfile.apiKey.trim().length > 0;
 
         return html`
             <h2 class="section-title">AI 生成引擎</h2>
@@ -643,18 +670,18 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>模型提供商</label>
                 <div class="provider-badges">
-                    <button class="provider-badge ${this.settings.generationProvider === 'openai' ? 'active' : ''}" @click=${() => this.setProvider('openai')}>
-                        OpenAI
-                    </button>
-                    <button class="provider-badge ${this.settings.generationProvider === 'deepseek' ? 'active' : ''}" @click=${() => this.setProvider('deepseek')}>
-                        DeepSeek
-                    </button>
+                    ${GENERATION_PROVIDERS.map((provider) => html`
+                        <button
+                            type="button"
+                            class="provider-badge ${this.settings.generationProvider === provider.id ? 'active' : ''}"
+                            data-provider=${provider.id}
+                            @click=${() => this.setProvider(provider.id)}
+                        >
+                            ${provider.label}
+                        </button>
+                    `)}
                 </div>
-                <p class="hint">
-                    ${this.settings.generationProvider === 'openai'
-                ? '使用 OpenAI API。请在下方为总览和精读填写明确模型名。'
-                : '使用 DeepSeek 模型。默认使用 deepseek-v4-flash。'}
-                </p>
+                <p class="hint">${selectedProvider.modelHelpText}</p>
             </div>
 
             <div class="form-group">
@@ -663,7 +690,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     ${isApiKeySet ? html`<span style="font-size: 12px; color: var(--success);">● 已配置</span>` : html`<span style="font-size: 12px; color: var(--warning);">○ 未配置</span>`}
                 </div>
                 <div class="api-key-wrapper">
-                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${this.settings.generationApiKey} @input=${this.handleFieldChange} placeholder="${this.settings.generationProvider === 'openai' ? 'sk-...' : 'sk-...'}" />
+                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${selectedProfile.apiKey} @input=${this.handleGenerationApiKeyChange} placeholder="sk-..." />
                     <button class="toggle-visibility-btn" @click=${() => this.showApiKey = !this.showApiKey} title="${this.showApiKey ? '隐藏' : '显示'}">
                         ${this.showApiKey
                 ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
@@ -672,21 +699,19 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     </button>
                 </div>
                 <p class="hint">
-                    ${this.settings.generationProvider === 'openai'
-                ? html`前往 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a> 获取 API Key。`
-                : html`前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek Platform</a> 获取 API Key。`}
+                    前往 <a href=${selectedProvider.apiKeyHelpUrl} target="_blank">${selectedProvider.label} Platform</a> 获取 API Key。
                 </p>
             </div>
 
             <div class="form-group">
                 <label>总览模型</label>
-                <input class="form-control" type="text" .value=${this.settings.generationModels.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${modelPlaceholder} />
-                <p class="hint">用于生成 overview 总览。DeepSeek 可留空使用默认模型；OpenAI 需要填写。</p>
+                <input class="form-control" type="text" data-task="overview" .value=${selectedProfile.models.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${selectedProvider.modelPlaceholder} />
+                <p class="hint">用于生成 overview 总览。${selectedProvider.modelHelpText}</p>
             </div>
 
             <div class="form-group">
                 <label>精读模型</label>
-                <input class="form-control" type="text" .value=${this.settings.generationModels.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${modelPlaceholder} />
+                <input class="form-control" type="text" data-task="intensive" .value=${selectedProfile.models.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${selectedProvider.modelPlaceholder} />
                 <p class="hint">用于生成 intensive 精读稿。Markdown Note 暂时跟随精读模型。</p>
             </div>
 

@@ -1,21 +1,50 @@
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
-import type { ExtensionSettings } from "../../src/settings/types";
+import { GENERATION_PROVIDER_VALUES } from "../../src/generation/provider-catalog";
+import type {
+    ExtensionSettings,
+    GenerationPromptTemplates,
+    GenerationProvider,
+    GenerationProviderProfile,
+    GenerationProviderSettings,
+} from "../../src/settings/types";
 import type { GenerationRequest } from "../../src/generation/types";
 
 export type SettingsOverrides = Partial<Omit<
     ExtensionSettings,
-    "generationModels" | "generationPromptTemplates"
+    "generationProviderSettings" | "generationPromptTemplates"
 >> & {
-    generationModels?: Partial<ExtensionSettings["generationModels"]>;
-    generationPromptTemplates?: Partial<ExtensionSettings["generationPromptTemplates"]>;
+    generationProviderSettings?: Partial<Record<GenerationProvider, Partial<GenerationProviderProfile>>>;
+    generationPromptTemplates?: Partial<GenerationPromptTemplates>;
 };
 
 export function createSettings(overrides: SettingsOverrides = {}): ExtensionSettings {
+    const generationProvider = overrides.generationProvider ?? DEFAULT_SETTINGS.generationProvider;
+    const generationProviderSettings = Object.fromEntries(
+        GENERATION_PROVIDER_VALUES.map((provider) => {
+            const defaultProfile = DEFAULT_SETTINGS.generationProviderSettings[provider];
+            const profileOverride = overrides.generationProviderSettings?.[provider];
+            const apiKey = profileOverride?.apiKey
+                ?? (provider === generationProvider
+                    ? provider === "openai" ? "oa-test-key" : "ds-test-key"
+                    : defaultProfile.apiKey);
+
+            return [provider, {
+                ...defaultProfile,
+                ...profileOverride,
+                apiKey,
+                models: {
+                    ...defaultProfile.models,
+                    ...profileOverride?.models,
+                },
+            }];
+        }),
+    ) as GenerationProviderSettings;
+
     return {
         ...DEFAULT_SETTINGS,
         ...overrides,
-        generationApiKey: overrides.generationApiKey ?? "test-key",
-        generationModels: { ...DEFAULT_SETTINGS.generationModels, ...overrides.generationModels },
+        generationProvider,
+        generationProviderSettings,
         generationPromptTemplates: {
             ...DEFAULT_SETTINGS.generationPromptTemplates,
             ...overrides.generationPromptTemplates,
