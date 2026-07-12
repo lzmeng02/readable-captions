@@ -37,9 +37,9 @@ npm ci
 | `tests/unit/generation/` | provider payload、strict SSE、delta reconstruction、port protocol |
 | `tests/unit/background/` | settings boundary、request replacement/cancel/disconnect、request-scoped keepalive |
 | `tests/unit/panel/` | frame scheduler 与 suffix-only title extraction |
-| `tests/unit/settings/` | public settings 不含私密字段 |
-| `tests/dom/panel/` | panel lifecycle、语言 transaction、导出、可见 task frame coalescing |
-| `tests/dom/options/` | reset/save 后 live `.value`/`.checked` |
+| `tests/unit/settings/` | canonical provider profiles、legacy migration/storage、public projection/validation 与 public-client error contract |
+| `tests/dom/panel/` | panel lifecycle、settings readiness、语言 transaction、导出、可见 task frame coalescing |
+| `tests/dom/options/` | provider profile 隔离、load/save/conflict 状态机、reset/save 后 live `.value`/`.checked` |
 | `tests/integration/` | development/production Vite output 清理语义与 dev script 顺序 |
 
 常用 focused 示例：
@@ -140,7 +140,12 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | SPA | Video → unsupported → video | One panel; old work/listeners disposed |
 | Host recovery | Remove `#readable-captions-root` | Same host/state returns once |
 | Languages | Switch B→C rapidly, then force failure | C wins; failure rolls back |
-| Providers | Generate with official OpenAI and DeepSeek | Compatible body and complete answer |
+| Provider profiles | DeepSeek → OpenAI → DeepSeek，再反向切换 | 两边 key/Overview/Intensive model 各自保留，不串用 |
+| Options persistence | 同时配置两边 profile，保存并重开 Options | OpenAI 与 DeepSeek profile 都保持 canonical 值 |
+| Options lifecycle | 注入 load failure/Retry；用两个 Options tab 测 clean 与 dirty update | 失败态不能保存 defaults；Retry 恢复；clean 自动更新，dirty 显式 conflict |
+| Panel settings | 延迟/破坏 public-settings 首次读取 | pending/error 明示；生成 tab、Note、copy/download fail closed，原文/设置仍可用 |
+| Generation disabled | 关闭生成后从 Panel/port 尝试 start | 无 keepalive、无外部 provider request，返回 disabled error |
+| Providers | 分别用获授权的 OpenAI 与 DeepSeek 凭据生成 | 每边只用自己的 profile/endpoint，payload 兼容并完成 streaming |
 | Streaming | Cancel/retry a long generation | No partial success; worker stays active |
 | Options | Change/reset/save General and Export controls | Displayed values equal saved values |
 | Dev | Start dev and trigger content rebuild | All five artifacts remain |
@@ -150,6 +155,19 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 “Providers”需要获授权的真实凭据；“Subtitle URLs/Multipart”等依赖当日 Bilibili 页面状态。没有可用浏览器 session、测试 URL、故障注入或凭据时，相关行一律明确记录为未验证，绝不从 Vitest/build 推断为通过。
 
 ## 常见修改路径
+
+### 增加生成 Provider
+
+下面每一项都是必做项；catalog entry 只是接入起点：
+
+1. 在 `src/generation/provider-catalog.ts` 增加唯一 entry：stable `id`、label、API-key help URL、model placeholder/help、可选的 request-time `defaultModel`，以及构造 endpoint、Authorization、body 和 `streamDecoder` 的 `buildRequest()`。不要在 Options 或 `llm-api.ts` 再加一套 provider switch；如果新 provider 不是当前 `chat-completions-sse`，还要实现并测试真实 decoder/transport dispatch；如果它要求显式 model 且没有 default，还要把 `resolveModel()` 当前 OpenAI-specific 的缺模型错误泛化并覆盖 provider-specific 测试。
+2. 在 `manifest.json` 为实际 API endpoint 加最小 `host_permissions`，运行完整 build，并核对 `dist/manifest.json` 与 service-worker Network。不要用宽泛 wildcard 代替已知 host。
+3. 当外部数据接收方变化时，更新 Chrome Web Store/发布流程中的 privacy disclosure 和任何面向用户的外发说明，明确 provider 会收到完整字幕、标题、URL、字幕来源及可用的 `aid`/`cid`。仓库当前没有独立 privacy-policy 文件，不能因此跳过这项；在交付记录中写明披露更新位置。
+4. 验证 canonical `generationProviderSettings[newId]` 是独立 profile，初始 key/model 不从其他 provider 复制；默认模型优先放在 catalog 作 request-time fallback。同步 `mergeSettings()` 的 normalize/migration 测试：新 schema 存在时绝不复活 globals；仅在缺失时迁移到 precedence 选中的单个 provider；`saveSettings()` 只保存 canonical profiles。
+5. 在 Options 中确认新按钮/label/help/placeholder 来自 catalog，key 与 Overview/Intensive model 只绑定 selected profile。实际填充并往返切换 **OpenAI、DeepSeek 和新 provider**，确认现有两份 profile 与新 profile 都不丢失；再 Save/reopen、Reset/save，确认每个 profile 都存在且无 legacy globals。
+6. 增加 focused tests：catalog adapter 的 URL/header/body/default model，selected-profile key/model 与 missing-key-before-fetch，settings defaults/normalization/migration/canonical save/secret-free public key，以及 `tests/dom/options/options-provider-profiles.test.ts` 的切换与持久化。fixture 只用明显的 fake key；如新增 decoder，再覆盖 chunk boundary、provider error 和 strict completion。
+7. 用真实 Chrome 加载新 build 做 smoke：处理新增 host permission，完成 profile 切换与 Options 重开，使用获授权的该 provider 测试账号完成一次 streaming，并在 service-worker Network 确认正确 endpoint、认证方式和 payload；再关闭 generation，确认没有外部请求。没有凭据或浏览器 session 时逐项写“未验证”和原因，不能用 Vitest/build 代替。
+8. 更新 [`architecture.md`](architecture.md) 的 provider 行为/外发数据与上面的 Chrome smoke 记录；不得把 API key、key-derived value 或真实账号信息写进 docs、fixture、日志或 commit。
 
 ### 增加或修改设置
 
@@ -174,7 +192,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 2. 同步 `protocol.ts`、content-side `llm-provider.ts` 和 `background.ts` 的消息验证与取消语义。
 3. 把 LLM fetch 和 `Authorization` header 留在 background；generation port 不传 API key，content 的 public-settings port 只接收去私密字段后的设置。
 4. 保持 raw-delta transport、strict SSE completion、request-scoped keepalive 和 Markdown 净化；验证 SSE 事件/UTF-8 可能跨 chunk 分割。
-5. 新设置或 provider 行为必须同步 Options、默认值/迁移、manifest 权限和两个 provider 的 smoke test。
+5. 新设置必须同步 Options、默认值/迁移与 cache identity；新增 provider 按上面的完整 checklist，不把“两个 provider smoke”当作可扩展接入方案。
 
 ### 修改 Panel UI
 

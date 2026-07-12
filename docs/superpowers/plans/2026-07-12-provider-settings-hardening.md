@@ -696,7 +696,7 @@ git commit -m "fix: enforce generation setting in background"
 **Interfaces:**
 - Documents: provider catalog extension path, canonical profile schema/migration, Options state/conflict behavior, Panel readiness, Background enforcement, and test/smoke requirements.
 
-- [ ] **Step 1: Update documentation**
+- [x] **Step 1: Update documentation**
 
 In `architecture.md`, replace the old global key/model/access-mode table with `generationProviderSettings`, selected-profile request flow, migration precedence, secret-free cache identity, and fail-closed readiness. In `development.md`, add the exact “new provider” checklist: catalog adapter, host permission, privacy disclosure, unit tests, both Options profiles, and real Chrome smoke. Keep `AGENTS.md` to one concise invariant only if its current settings paragraph would otherwise be misleading.
 
