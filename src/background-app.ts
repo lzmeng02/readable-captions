@@ -49,16 +49,19 @@ export function registerBackground(deps: BackgroundDependencies): void {
         console.warn("Failed to restrict extension storage access", error);
     });
 
-    const publicSettingsPorts = new Set<RuntimePort>();
+    const publicSettingsPortRevisions = new Map<RuntimePort, number>();
+    let publicSettingsRevision = 0;
 
-    const postCurrentPublicSettings = async (port: RuntimePort): Promise<void> => {
+    const postCurrentPublicSettings = async (port: RuntimePort, revision: number): Promise<void> => {
         try {
             const settings = await deps.getSettings();
+            if (publicSettingsPortRevisions.get(port) !== revision) return;
             postPublicSettingsToPort(port, {
                 type: "settings",
                 settings: toPublicSettings(settings),
             });
         } catch (errorValue) {
+            if (publicSettingsPortRevisions.get(port) !== revision) return;
             postPublicSettingsToPort(port, {
                 type: "error",
                 message: toError(errorValue).message,
@@ -67,8 +70,10 @@ export function registerBackground(deps: BackgroundDependencies): void {
     };
 
     deps.watchSettings((settings) => {
+        const revision = ++publicSettingsRevision;
         const publicSettings = toPublicSettings(settings);
-        for (const port of publicSettingsPorts) {
+        for (const port of publicSettingsPortRevisions.keys()) {
+            publicSettingsPortRevisions.set(port, revision);
             postPublicSettingsToPort(port, {
                 type: "settings",
                 settings: publicSettings,
@@ -78,11 +83,12 @@ export function registerBackground(deps: BackgroundDependencies): void {
 
     deps.chrome?.runtime?.onConnect?.addListener((port) => {
         if (port.name === PUBLIC_SETTINGS_PORT) {
-            publicSettingsPorts.add(port);
-            void postCurrentPublicSettings(port);
+            const revision = publicSettingsRevision;
+            publicSettingsPortRevisions.set(port, revision);
+            void postCurrentPublicSettings(port, revision);
 
             port.onDisconnect.addListener(() => {
-                publicSettingsPorts.delete(port);
+                publicSettingsPortRevisions.delete(port);
             });
             return;
         }

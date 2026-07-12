@@ -10,6 +10,7 @@ type TabId = "general" | "generation" | "export" | "about";
 type OptionsPhase = "loading" | "ready" | "saving" | "error";
 type ExternalConflict = { settings: ExtensionSettings; sequence: number };
 type PendingSave = { snapshotKey: string; ownWatchSequence: number | null };
+const MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS = 8;
 
 @customElement("rc-options-app")
 export class ReadableCaptionsOptionsApp extends LitElement {
@@ -542,6 +543,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     @state() private showApiKey = false;
     private baseline: ExtensionSettings | null = null;
     private pendingSave: PendingSave | null = null;
+    private readonly retainedSaveAcknowledgementKeys = new Set<string>();
     private unwatchSettings: (() => void) | null = null;
     private operationVersion = 0;
     private watchSequence = 0;
@@ -556,6 +558,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.operationVersion += 1;
         this.stopWatchingSettings();
         this.pendingSave = null;
+        this.retainedSaveAcknowledgementKeys.clear();
         this.clearStatusTimer();
         super.disconnectedCallback();
     }
@@ -596,19 +599,27 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.baseline = null;
         this.conflict = null;
         this.pendingSave = null;
+        this.retainedSaveAcknowledgementKeys.clear();
         this.loadError = "";
 
         try {
+            let latestSettingsDuringRead: ExtensionSettings | null = null;
+            this.unwatchSettings = watchSettings((nextSettings) => {
+                if (operation !== this.operationVersion || !this.isConnected) return;
+                if (this.phase === "loading") {
+                    latestSettingsDuringRead = mergeSettings(nextSettings);
+                    return;
+                }
+                this.handleExternalSettings(nextSettings);
+            });
+
             const settings = await getSettings();
             if (operation !== this.operationVersion || !this.isConnected) return;
 
-            this.draft = settings;
-            this.baseline = settings;
+            const reconciledSettings = latestSettingsDuringRead ?? mergeSettings(settings);
+            this.draft = reconciledSettings;
+            this.baseline = reconciledSettings;
             this.phase = "ready";
-            this.unwatchSettings = watchSettings((nextSettings) => {
-                if (operation !== this.operationVersion || !this.isConnected) return;
-                this.handleExternalSettings(nextSettings);
-            });
         } catch (error) {
             if (operation !== this.operationVersion || !this.isConnected) return;
             this.stopWatchingSettings();
@@ -622,11 +633,14 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     private handleExternalSettings(settings: ExtensionSettings): void {
         const sequence = ++this.watchSequence;
         const nextSettings = mergeSettings(settings);
+        const nextSettingsKey = this.canonicalKey(nextSettings);
         const pendingSave = this.pendingSave;
-        if (pendingSave && this.canonicalKey(nextSettings) === pendingSave.snapshotKey) {
+        if (pendingSave && nextSettingsKey === pendingSave.snapshotKey) {
+            this.retainedSaveAcknowledgementKeys.delete(nextSettingsKey);
             pendingSave.ownWatchSequence = sequence;
             return;
         }
+        if (this.retainedSaveAcknowledgementKeys.delete(nextSettingsKey)) return;
         if (!this.draft || !this.baseline) return;
 
         if (this.conflict || this.phase === "saving" || (this.phase === "ready" && this.isDirty)) {
@@ -805,6 +819,13 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             if (!conflict
                 || (ownWatchSequence !== null && conflict.sequence <= ownWatchSequence)) {
                 this.conflict = null;
+            }
+            if (ownWatchSequence === null) {
+                if (this.retainedSaveAcknowledgementKeys.size >= MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS) {
+                    const oldestKey = this.retainedSaveAcknowledgementKeys.values().next().value;
+                    if (oldestKey !== undefined) this.retainedSaveAcknowledgementKeys.delete(oldestKey);
+                }
+                this.retainedSaveAcknowledgementKeys.add(pendingSave.snapshotKey);
             }
             this.pendingSave = null;
             this.phase = "ready";

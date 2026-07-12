@@ -114,6 +114,23 @@ describe("Options settings lifecycle", () => {
         expect(storageMocks.saveSettings).not.toHaveBeenCalled();
     });
 
+    it("keeps an external write that arrives while the initial read is pending", async () => {
+        const pending = deferred<ExtensionSettings>();
+        const staleRead = canonicalFixture({ defaultTab: "original" });
+        const externalWrite = canonicalFixture({ defaultTab: "intensive" });
+        storageMocks.getSettings.mockReturnValueOnce(pending.promise);
+
+        const app = await mountInitialOptions();
+
+        expect(watchedSettings, "watchSettings subscription before read completion").toBeTypeOf("function");
+        watchedSettings!(externalWrite);
+        pending.resolve(staleRead);
+        await settle(app);
+
+        expect(defaultTabValue(app)).toBe("intensive");
+        expect(findButton(app, "载入外部设置")).toBeUndefined();
+    });
+
     it("shows a load error and retries instead of exposing editable defaults", async () => {
         const retry = deferred<ExtensionSettings>();
         storageMocks.getSettings
@@ -262,6 +279,62 @@ describe("Options settings lifecycle", () => {
 
         expect(findButton(app, "载入外部设置")).toBeUndefined();
         expect(app.shadowRoot?.querySelector<HTMLButtonElement>(".btn-primary")?.disabled).toBe(false);
+    });
+
+    it("accepts a delayed own-save acknowledgement after save resolution and a new local edit", async () => {
+        const app = await mountLoadedOptions();
+        await changeDefaultTab(app, "overview");
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+        expect(snapshot).toBeDefined();
+
+        await changeDefaultTab(app, "intensive");
+        await emitExternal(app, snapshot);
+
+        expect.soft(defaultTabValue(app)).toBe("intensive");
+        expect.soft(findButton(app, "载入外部设置")).toBeUndefined();
+        expect(app.shadowRoot?.querySelector<HTMLButtonElement>(".btn-primary")?.disabled).toBe(false);
+    });
+
+    it("does not replace a newer conflict when a delayed own-save acknowledgement arrives", async () => {
+        const app = await mountLoadedOptions();
+        await changeDefaultTab(app, "overview");
+        const pending = deferred<ExtensionSettings>();
+        storageMocks.saveSettings.mockReturnValueOnce(pending.promise);
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+        const newerExternal = canonicalFixture({ defaultTab: "intensive" });
+        expect(snapshot).toBeDefined();
+
+        await emitExternal(app, newerExternal);
+        pending.resolve(snapshot);
+        await settle(app);
+        await emitExternal(app, snapshot);
+
+        expect(findButton(app, "载入外部设置"), "newer external conflict").toBeDefined();
+        findButton(app, "载入外部设置")?.click();
+        await settle(app);
+        expect(defaultTabValue(app)).toBe("intensive");
+    });
+
+    it("forgets unobserved own-save acknowledgements across reconnect", async () => {
+        const app = await mountLoadedOptions();
+        await changeDefaultTab(app, "overview");
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const oldSnapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+        expect(oldSnapshot).toBeDefined();
+
+        app.remove();
+        storageMocks.getSettings.mockResolvedValueOnce(canonicalFixture({ defaultTab: "intensive" }));
+        document.body.append(app);
+        await settle(app);
+        await changeDefaultTab(app, "original");
+        await emitExternal(app, oldSnapshot);
+
+        expect(findButton(app, "载入外部设置"), "post-reconnect external conflict").toBeDefined();
     });
 
     it("preserves a newer external event after its own save acknowledgement", async () => {
