@@ -629,7 +629,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
         if (!this.draft || !this.baseline) return;
 
-        if (this.phase === "saving" || (this.phase === "ready" && this.isDirty)) {
+        if (this.conflict || this.phase === "saving" || (this.phase === "ready" && this.isDirty)) {
             this.conflict = { settings: nextSettings, sequence };
             this.clearStatus();
             return;
@@ -763,7 +763,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     }
 
     private handleLoadExternal(): void {
-        if (!this.conflict) return;
+        if (this.phase !== "ready" || !this.conflict) return;
         this.draft = this.conflict.settings;
         this.baseline = this.conflict.settings;
         this.conflict = null;
@@ -771,7 +771,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     }
 
     private handleKeepLocal(): void {
-        if (!this.conflict || !this.draft) return;
+        if (this.phase !== "ready" || !this.conflict || !this.draft) return;
         this.baseline = this.conflict.settings;
         this.conflict = null;
         this.clearStatus();

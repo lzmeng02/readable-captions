@@ -284,6 +284,60 @@ describe("Options settings lifecycle", () => {
         expect(app.shadowRoot?.querySelector<HTMLButtonElement>(".btn-primary")?.disabled).toBe(true);
     });
 
+    it("keeps the latest external event conflicted until the user resolves it", async () => {
+        const app = await mountLoadedOptions();
+        await changeDefaultTab(app, "overview");
+        const pending = deferred<ExtensionSettings>();
+        storageMocks.saveSettings.mockReturnValueOnce(pending.promise);
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+        expect(snapshot).toBeDefined();
+
+        await emitExternal(app, snapshot);
+        await emitExternal(app, canonicalFixture({ defaultTab: "intensive" }));
+        pending.resolve(snapshot);
+        await settle(app);
+
+        await emitExternal(app, canonicalFixture({ defaultTab: "original" }));
+
+        expect.soft(defaultTabValue(app)).toBe("overview");
+        expect.soft(findButton(app, "载入外部设置"), "latest external conflict").toBeDefined();
+        expect.soft(app.shadowRoot?.querySelector<HTMLButtonElement>(".btn-primary")?.disabled).toBe(true);
+
+        findButton(app, "载入外部设置")?.click();
+        await settle(app);
+        expect(defaultTabValue(app)).toBe("original");
+    });
+
+    it.each(["载入外部设置", "保留当前编辑"])(
+        "ignores a programmatic %s action while saving",
+        async (actionLabel) => {
+            const app = await mountLoadedOptions();
+            await changeDefaultTab(app, "overview");
+            const pending = deferred<ExtensionSettings>();
+            storageMocks.saveSettings.mockReturnValueOnce(pending.promise);
+            findButton(app, "保存设置")?.click();
+            await settle(app);
+            const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+            expect(snapshot).toBeDefined();
+
+            await emitExternal(app, canonicalFixture({ defaultTab: "intensive" }));
+            const action = findButton(app, actionLabel);
+            expect(action, `${actionLabel} conflict action`).toBeDefined();
+
+            action!.dispatchEvent(new Event("click", { bubbles: true, composed: true }));
+            await settle(app);
+
+            expect.soft(defaultTabValue(app)).toBe("overview");
+            expect.soft(findButton(app, "载入外部设置"), "conflict remains pending").toBeDefined();
+            expect.soft(findButton(app, "保留当前编辑"), "conflict remains pending").toBeDefined();
+
+            pending.resolve(snapshot);
+            await settle(app);
+        },
+    );
+
     it("unsubscribes from settings updates when disconnected", async () => {
         const app = await mountLoadedOptions();
         expect.soft(storageMocks.watchSettings).toHaveBeenCalledOnce();
