@@ -19,11 +19,20 @@ async function run(chunks: readonly string[]): Promise<string> {
     });
 }
 
+async function rejectionMessage(work: Promise<unknown>): Promise<string> {
+    try {
+        await work;
+        return "";
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+    }
+}
+
 describe("chat completion streams", () => {
     it("rejects EOF before DONE", async () => {
         await expect(run([
             'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}\n\n',
-        ])).rejects.toThrow("before [DONE]");
+        ])).rejects.toThrow("The generation provider returned an invalid response. Please try again.");
     });
 
     it.each(["length", "content_filter", "insufficient_system_resource"])(
@@ -33,7 +42,7 @@ describe("chat completion streams", () => {
                 'data: {"choices":[{"delta":{"content":"cut"},"finish_reason":null}]}\n\n',
                 `data: {"choices":[{"delta":{},"finish_reason":"${reason}"}]}\n\n`,
                 "data: [DONE]\n\n",
-            ])).rejects.toThrow(reason);
+            ])).rejects.toThrow("The generation provider returned an invalid response. Please try again.");
         },
     );
 
@@ -41,17 +50,67 @@ describe("chat completion streams", () => {
         await expect(run([
             'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
             "data: [DONE]\n\n",
-        ])).rejects.toThrow("empty");
+        ])).rejects.toThrow("The generation provider returned an invalid response. Please try again.");
     });
 
-    it("surfaces streamed provider errors", async () => {
-        await expect(run([
-            'data: {"error":{"message":"quota exceeded"}}\n\n',
-        ])).rejects.toThrow("quota exceeded");
+    it("redacts streamed provider error details", async () => {
+        const leakMarker = "oa-test-key";
+        const message = await rejectionMessage(run([
+            `data: {"error":{"message":"${leakMarker}"}}\n\n`,
+        ]));
+
+        expect(message).toBe("The generation provider rejected the request. Check your provider settings and try again.");
+        expect(message).not.toContain(leakMarker);
+    });
+
+    it("redacts HTTP provider error bodies and status text", async () => {
+        const leakMarker = "oa-test-key";
+        vi.stubGlobal("fetch", vi.fn(async () => new Response(
+            JSON.stringify({ error: { message: leakMarker } }),
+            { status: 401, statusText: leakMarker },
+        )));
+
+        const message = await rejectionMessage(streamGenerationFromApi({
+            settings: createSettings({
+                generationProvider: "openai",
+                generationProviderSettings: {
+                    openai: { apiKey: leakMarker, models: { overview: "gpt-4o-mini", intensive: "" } },
+                },
+            }),
+            request: generationRequest,
+            signal: new AbortController().signal,
+            onToken: vi.fn(),
+        }));
+
+        expect(message).toBe("The generation provider rejected the request. Check your provider settings and try again.");
+        expect(message).not.toContain(leakMarker);
+    });
+
+    it("redacts plain provider dependency failures", async () => {
+        const leakMarker = "oa-test-key";
+        vi.stubGlobal("fetch", vi.fn(async () => {
+            throw new Error(`network failure ${leakMarker}`);
+        }));
+
+        const message = await rejectionMessage(streamGenerationFromApi({
+            settings: createSettings({
+                generationProvider: "openai",
+                generationProviderSettings: {
+                    openai: { apiKey: leakMarker, models: { overview: "gpt-4o-mini", intensive: "" } },
+                },
+            }),
+            request: generationRequest,
+            signal: new AbortController().signal,
+            onToken: vi.fn(),
+        }));
+
+        expect(message).toBe("Could not reach the generation provider. Check your connection and try again.");
+        expect(message).not.toContain(leakMarker);
     });
 
     it("rejects malformed JSON instead of discarding it", async () => {
-        await expect(run(["data: {not-json}\n\n"])).rejects.toThrow("Malformed SSE JSON");
+        await expect(run(["data: {not-json}\n\n"]))
+            .rejects.toThrow("The generation provider returned an invalid response. Please try again.");
     });
 
     it("joins multiple data lines in one event", async () => {
@@ -81,7 +140,7 @@ describe("chat completion streams", () => {
         await expect(run([
             'data: {"choices":[{"delta":{"reasoning_content":"thinking"},"finish_reason":"stop"}]}\n\n',
             "data: [DONE]\n\n",
-        ])).rejects.toThrow("empty");
+        ])).rejects.toThrow("The generation provider returned an invalid response. Please try again.");
     });
 
     it("emits the delta from a content-bearing stop event", async () => {

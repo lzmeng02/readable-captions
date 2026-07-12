@@ -1,3 +1,5 @@
+import { GenerationUserError } from "./errors";
+
 export type ProviderChatMessage = { role: "system" | "user"; content: string };
 export type GenerationStreamDecoderId = "chat-completions-sse";
 
@@ -72,4 +74,24 @@ export function getGenerationProvider(
     provider: GenerationProvider,
 ): GenerationProviderDefinition<GenerationProvider> {
     return GENERATION_PROVIDERS.find(({ id }) => id === provider)!;
+}
+
+class MissingProviderModelError extends GenerationUserError {
+    constructor(providerLabel: string) {
+        super("model-missing");
+        this.message = `${providerLabel} model is not set. Please configure a model in the extension options.`;
+    }
+}
+
+export function resolveGenerationProviderModel(
+    provider: GenerationProvider,
+    configuredModel: string,
+): string {
+    const model = configuredModel.trim();
+    if (model) return model;
+
+    const definition = getGenerationProvider(provider);
+    if (definition.defaultModel) return definition.defaultModel;
+
+    throw new MissingProviderModelError(definition.label);
 }

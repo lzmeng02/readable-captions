@@ -1,4 +1,5 @@
 import type { GenerationRequest } from "./types";
+import { GenerationUserError } from "./errors";
 import {
     GENERATION_STREAM_PORT,
     isGenerationBackgroundMessage,
@@ -33,20 +34,20 @@ function getExtensionChrome(): ExtensionChrome | null {
     return (globalThis as typeof globalThis & { chrome?: ExtensionChrome }).chrome ?? null;
 }
 
-function toError(value: unknown): Error {
+function toRuntimeError(value: unknown): GenerationUserError {
     const message = value instanceof Error ? value.message : String(value);
     if (message.includes("Extension context invalidated")) {
-        return new Error("Extension context was invalidated. Reload this page and try again.");
+        return new GenerationUserError("runtime-invalidated");
     }
 
-    return value instanceof Error ? value : new Error(message);
+    return new GenerationUserError("runtime-unavailable");
 }
 
-function connectGenerationPort(): RuntimePort | Error | null {
+function connectGenerationPort(): RuntimePort | GenerationUserError | null {
     try {
         return getExtensionChrome()?.runtime?.connect?.({ name: GENERATION_STREAM_PORT }) ?? null;
     } catch (errorValue) {
-        return toError(errorValue);
+        return toRuntimeError(errorValue);
     }
 }
 
@@ -56,12 +57,12 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
 
     if (!portOrError) {
         queueMicrotask(() => {
-            options.onError(new Error("Extension runtime is unavailable. Reload the extension and try again."));
+            options.onError(new GenerationUserError("runtime-unavailable"));
         });
         return controller;
     }
 
-    if (portOrError instanceof Error) {
+    if (portOrError instanceof GenerationUserError) {
         queueMicrotask(() => {
             options.onError(portOrError);
         });
@@ -114,7 +115,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
         if (message.type === "done") {
             options.onDone(message.text);
         } else {
-            options.onError(new Error(message.message));
+            options.onError(new GenerationUserError(message.code));
         }
         disconnectPort();
     });
@@ -122,7 +123,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
     port.onDisconnect.addListener(() => {
         if (!finished && !controller.signal.aborted) {
             finished = true;
-            options.onError(new Error("Generation service disconnected before completion."));
+            options.onError(new GenerationUserError("service-disconnected"));
         }
     });
 
@@ -135,7 +136,7 @@ export function streamGeneration(options: StreamingGenerationOptions): AbortCont
         port.postMessage(startMessage);
     } catch (errorValue) {
         finished = true;
-        options.onError(toError(errorValue));
+        options.onError(toRuntimeError(errorValue));
     }
 
     return controller;

@@ -43,11 +43,31 @@ describe("runtime generation streams", () => {
         expect(onDone).toHaveBeenCalledWith("canonical");
     });
 
+    it("maps a validated background error code to its stable safe message", () => {
+        const fake = createFakeRuntimePort();
+        vi.stubGlobal("chrome", { runtime: { connect: () => fake.port } });
+        const onError = vi.fn();
+
+        streamGeneration({
+            request: generationRequest,
+            onToken: vi.fn(),
+            onDone: vi.fn(),
+            onError,
+        });
+        fake.emitMessage({ type: "error", code: "api-key-missing" });
+
+        expect(onError).toHaveBeenCalledOnce();
+        expect(onError.mock.calls[0]?.[0]).toMatchObject({
+            code: "api-key-missing",
+            message: "API Key is not set. Please configure it in the extension options.",
+        });
+    });
+
     it("ignores late port messages after aborting a stream", () => {
         const lateMessages = [
             { type: "token", text: "late" },
             { type: "done", text: "late" },
-            { type: "error", message: "late" },
+            { type: "error", code: "generation-failed" },
         ] as const;
 
         for (const lateMessage of lateMessages) {

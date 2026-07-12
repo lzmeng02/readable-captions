@@ -352,9 +352,20 @@ describe("mountPanel lifecycle", () => {
         clickAction(host, "下载当前内容");
         await Promise.resolve();
 
-        expect.soft(host.shadowRoot?.textContent).toContain("generation failed");
+        expect.soft(host.shadowRoot?.textContent).toContain("Generation failed. Please try again.");
         expect.soft(mocks.copyMarkdownText).not.toHaveBeenCalled();
         expect.soft(downloadedFilename).toBe("");
+    });
+
+    it("does not render arbitrary generation dependency details", () => {
+        const leakMarker = "oa-test-key";
+        const { host } = mountReadyPanel();
+        clickTab(host, "overview");
+
+        mocks.generationOptions.at(-1)!.onError(new Error(`provider failure ${leakMarker}`));
+
+        expect.soft(host.shadowRoot?.textContent).toContain("Generation failed. Please try again.");
+        expect(host.shadowRoot?.textContent).not.toContain(leakMarker);
     });
 });
 

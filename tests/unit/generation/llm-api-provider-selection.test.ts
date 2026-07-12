@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { streamGenerationFromApi } from "../../../src/generation/llm-api";
+import { getGenerationProvider } from "../../../src/generation/provider-catalog";
 import {
     createSettings,
     createSseResponse,
@@ -114,6 +115,33 @@ describe("provider request selection", () => {
 
         expect({ message: outcome.message, fetchCalls: fetchMock.mock.calls.length }).toEqual({
             message: "API Key is not set. Please configure it in the extension options.",
+            fetchCalls: 0,
+        });
+    });
+
+    it("uses catalog-owned provider identity in the missing-model error", async () => {
+        const fetchMock = vi.fn(async () => createSseResponse(successfulSse));
+        vi.stubGlobal("fetch", fetchMock);
+        const provider = getGenerationProvider("openai");
+        const settings = createSettings({
+            generationProvider: "openai",
+            generationProviderSettings: {
+                openai: { models: { overview: "", intensive: "" } },
+            },
+        });
+
+        const outcome = await streamGenerationFromApi({
+            settings,
+            request: generationRequest,
+            signal: new AbortController().signal,
+            onToken: vi.fn(),
+        }).then(
+            () => ({ message: null }),
+            (error: unknown) => ({ message: error instanceof Error ? error.message : String(error) }),
+        );
+
+        expect({ message: outcome.message, fetchCalls: fetchMock.mock.calls.length }).toEqual({
+            message: `${provider.label} model is not set. Please configure a model in the extension options.`,
             fetchCalls: 0,
         });
     });

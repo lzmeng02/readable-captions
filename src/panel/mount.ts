@@ -2,6 +2,7 @@ import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode, PublicSettingsStatus } from "./panel-view";
 import { streamGeneration } from "../generation/llm-provider";
+import { getSafeGenerationErrorMessage } from "../generation/errors";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { watchPublicSettings } from "../settings/public-client";
 import type { PublicExtensionSettings } from "../settings/types";
@@ -199,7 +200,7 @@ export function mountPanel(
                 if (!isCurrentRequest()) return;
                 state.requestVersion += 1;
                 state.text = null;
-                state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
+                state.error = getSafeGenerationErrorMessage(err);
                 state.isGenerating = false;
                 state.activeAbort = null;
                 if (isGenerationTaskVisible(task)) {
