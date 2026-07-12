@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
 const storageMocks = vi.hoisted(() => ({
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
+    watchSettings: vi.fn(),
 }));
 vi.mock("../../../src/settings/storage", () => storageMocks);
 import { ReadableCaptionsOptionsApp } from "../../../src/options/index";
@@ -46,6 +47,7 @@ beforeEach(() => {
         downloadFormat: "srt",
     });
     storageMocks.saveSettings.mockReset().mockImplementation(async (settings) => settings);
+    storageMocks.watchSettings.mockReset().mockReturnValue(vi.fn());
 });
 afterEach(() => document.body.replaceChildren());
 
