@@ -1,7 +1,7 @@
 # Provider Settings Hardening and Extensibility Design
 
 - **Date:** 2026-07-12
-- **Status:** Concept approved; written review requested
+- **Status:** Approved
 - **Target branch:** `fix/code-review-bugs`
 - **Target baseline:** `8f030b6`
 
