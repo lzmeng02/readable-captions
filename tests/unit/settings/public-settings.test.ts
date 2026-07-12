@@ -89,3 +89,40 @@ it("keeps cache identity secret-independent and scoped to the selected profile",
     expect(toPublicSettings(withSelectedModel).generationSettingsKey)
         .not.toBe(toPublicSettings(base).generationSettingsKey);
 });
+
+it("uses a wider cache digest for colliding effective prompt settings without including API keys", () => {
+    const first = mergeSettings({
+        ...DEFAULT_SETTINGS,
+        generationProvider: "deepseek",
+        generationPromptTemplates: {
+            ...DEFAULT_SETTINGS.generationPromptTemplates,
+            overview: "dqf47-abkoyw-rnk",
+        },
+    });
+    const second = mergeSettings({
+        ...first,
+        generationPromptTemplates: {
+            ...first.generationPromptTemplates,
+            overview: "1x7h58b-n902eu-25mf",
+        },
+    });
+    const withApiKeyOnlyChange = mergeSettings({
+        ...first,
+        generationProviderSettings: {
+            ...first.generationProviderSettings,
+            deepseek: {
+                ...first.generationProviderSettings.deepseek,
+                apiKey: "ds-test-key",
+            },
+        },
+    });
+
+    const firstKey = toPublicSettings(first).generationSettingsKey;
+    const secondKey = toPublicSettings(second).generationSettingsKey;
+    const keyOnlyChange = toPublicSettings(withApiKeyOnlyChange).generationSettingsKey;
+
+    expect(firstKey).not.toBe(secondKey);
+    expect(keyOnlyChange).toBe(firstKey);
+    expect(firstKey).toMatch(/^[0-9a-z]{13}$/);
+    expect(firstKey).not.toContain("ds-test-key");
+});

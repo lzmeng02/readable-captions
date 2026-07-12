@@ -18,20 +18,20 @@ export type PublicSettingsPortMessage =
         message: string;
     };
 
-function hashString(value: string): string {
-    let hash = 2166136261;
+function digestString(value: string): string {
+    let hash = 0xcbf29ce484222325n;
     for (let i = 0; i < value.length; i += 1) {
-        hash ^= value.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
+        hash ^= BigInt(value.charCodeAt(i));
+        hash = BigInt.asUintN(64, hash * 0x100000001b3n);
     }
 
-    return (hash >>> 0).toString(36);
+    return hash.toString(36).padStart(13, "0");
 }
 
 function getGenerationSettingsKey(settings: ExtensionSettings): string {
     const selectedProfile = settings.generationProviderSettings[settings.generationProvider];
 
-    return hashString(JSON.stringify({
+    return digestString(JSON.stringify({
         provider: settings.generationProvider,
         models: selectedProfile.models,
         prompts: settings.generationPromptTemplates,
