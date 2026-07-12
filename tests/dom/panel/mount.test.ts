@@ -112,6 +112,10 @@ function clickAction(host: HTMLElement, title: string): void {
     button.click();
 }
 
+function moreMenu(host: HTMLElement): HTMLElement | null {
+    return host.shadowRoot?.querySelector<HTMLElement>(".overflow-menu") ?? null;
+}
+
 function mountReadyPanel(): { host: HTMLElement; handle: PanelHandle } {
     const host = document.createElement("section");
     document.body.append(host);
@@ -217,6 +221,42 @@ describe("mountPanel lifecycle", () => {
         expect(activeTabText(host)).toBe("原文");
     });
 
+    it("reset closes an open More menu", () => {
+        const { host, handle } = mountReadyPanel();
+
+        try {
+            clickAction(host, "更多");
+            expect(moreMenu(host)).not.toBeNull();
+
+            handle.reset({ transcript: null, source: "none", status: "loading" });
+
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("keeps More-menu state isolated between mounted panels", () => {
+        const first = mountReadyPanel();
+        const second = mountReadyPanel();
+
+        try {
+            clickAction(first.host, "更多");
+            expect(moreMenu(first.host)).not.toBeNull();
+
+            second.handle.updateData({
+                transcript: [{ from: 0, to: 1, content: "second panel" }],
+                source: "human_view",
+                status: "ready",
+            });
+
+            expect(moreMenu(second.host)).toBeNull();
+        } finally {
+            first.handle.dispose();
+            second.handle.dispose();
+        }
+    });
+
     it("ignores stale generation callbacks after reset", async () => {
         const { host, handle } = mountReadyPanel();
         clickTab(host, "overview");
@@ -312,9 +352,20 @@ describe("mountPanel lifecycle", () => {
         clickAction(host, "下载当前内容");
         await Promise.resolve();
 
-        expect.soft(host.shadowRoot?.textContent).toContain("generation failed");
+        expect.soft(host.shadowRoot?.textContent).toContain("Generation failed. Please try again.");
         expect.soft(mocks.copyMarkdownText).not.toHaveBeenCalled();
         expect.soft(downloadedFilename).toBe("");
+    });
+
+    it("does not render arbitrary generation dependency details", () => {
+        const leakMarker = "oa-test-key";
+        const { host } = mountReadyPanel();
+        clickTab(host, "overview");
+
+        mocks.generationOptions.at(-1)!.onError(new Error(`provider failure ${leakMarker}`));
+
+        expect.soft(host.shadowRoot?.textContent).toContain("Generation failed. Please try again.");
+        expect(host.shadowRoot?.textContent).not.toContain(leakMarker);
     });
 });
 

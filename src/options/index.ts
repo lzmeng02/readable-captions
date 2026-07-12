@@ -1,11 +1,22 @@
 // src/options/index.ts
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { GENERATION_PROVIDERS, getGenerationProvider } from "../generation/provider-catalog";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
-import { getSettings, saveSettings } from "../settings/storage";
-import type { ExtensionSettings, GenerationProvider } from "../settings/types";
+import {
+    createSettingsWriteRevision,
+    getSettings,
+    saveSettings,
+    watchSettings,
+    type SettingsWatchMetadata,
+} from "../settings/storage";
+import type { ExtensionSettings, GenerationModels, GenerationProvider } from "../settings/types";
 
 type TabId = "general" | "generation" | "export" | "about";
+type OptionsPhase = "loading" | "ready" | "saving" | "error";
+type ExternalConflict = { settings: ExtensionSettings; sequence: number };
+type PendingSave = { revision: string; ownWatchSequence: number | null };
+const MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS = 8;
 
 @customElement("rc-options-app")
 export class ReadableCaptionsOptionsApp extends LitElement {
@@ -158,6 +169,24 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
 
         /* ===== Form ===== */
+        .settings-fieldset {
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+        }
+
+        .lifecycle-state {
+            margin-bottom: 24px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .lifecycle-state p {
+            margin: 0 0 12px;
+        }
+
         .form-group {
             margin-bottom: 24px;
             max-width: 520px;
@@ -497,48 +526,224 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
 
         .warning-banner svg { flex-shrink: 0; margin-top: 1px; }
+
+        .conflict-banner {
+            display: block;
+        }
+
+        .conflict-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
     `;
 
-    @state() private settings: ExtensionSettings = DEFAULT_SETTINGS;
+    @state() private phase: OptionsPhase = "loading";
+    @state() private draft: ExtensionSettings | null = null;
+    @state() private conflict: ExternalConflict | null = null;
+    @state() private loadError = "";
     @state() private currentTab: TabId = "general";
-    @state() private isSaving = false;
     @state() private statusTone: "idle" | "success" | "error" = "idle";
     @state() private statusMessage = "";
     @state() private showApiKey = false;
+    private baseline: ExtensionSettings | null = null;
+    private pendingSave: PendingSave | null = null;
+    private readonly retainedSaveAcknowledgementRevisions = new Set<string>();
+    private unwatchSettings: (() => void) | null = null;
+    private operationVersion = 0;
+    private watchSequence = 0;
+    private statusTimer: ReturnType<typeof setTimeout> | null = null;
 
     connectedCallback(): void {
         super.connectedCallback();
         void this.loadSettings();
     }
 
+    disconnectedCallback(): void {
+        this.operationVersion += 1;
+        this.stopWatchingSettings();
+        this.pendingSave = null;
+        this.retainedSaveAcknowledgementRevisions.clear();
+        this.clearStatusTimer();
+        super.disconnectedCallback();
+    }
+
+    private canonicalKey(settings: ExtensionSettings): string {
+        return JSON.stringify(mergeSettings(settings));
+    }
+
+    private get isDirty(): boolean {
+        return this.draft !== null
+            && this.baseline !== null
+            && this.canonicalKey(this.draft) !== this.canonicalKey(this.baseline);
+    }
+
+    private stopWatchingSettings(): void {
+        this.unwatchSettings?.();
+        this.unwatchSettings = null;
+    }
+
+    private clearStatusTimer(): void {
+        if (this.statusTimer === null) return;
+        clearTimeout(this.statusTimer);
+        this.statusTimer = null;
+    }
+
+    private clearStatus(): void {
+        this.clearStatusTimer();
+        this.statusTone = "idle";
+        this.statusMessage = "";
+    }
+
     private async loadSettings(): Promise<void> {
+        const operation = ++this.operationVersion;
+        this.stopWatchingSettings();
+        this.clearStatus();
+        this.phase = "loading";
+        this.draft = null;
+        this.baseline = null;
+        this.conflict = null;
+        this.pendingSave = null;
+        this.retainedSaveAcknowledgementRevisions.clear();
+        this.loadError = "";
+
         try {
-            this.settings = await getSettings();
-        } catch {
-            this.settings = DEFAULT_SETTINGS;
+            let latestSettingsDuringRead: ExtensionSettings | null = null;
+            this.unwatchSettings = watchSettings((nextSettings, metadata) => {
+                if (operation !== this.operationVersion || !this.isConnected) return;
+                if (this.phase === "loading") {
+                    latestSettingsDuringRead = mergeSettings(nextSettings);
+                    return;
+                }
+                this.handleExternalSettings(nextSettings, metadata);
+            });
+
+            const settings = await getSettings();
+            if (operation !== this.operationVersion || !this.isConnected) return;
+
+            const reconciledSettings = latestSettingsDuringRead ?? mergeSettings(settings);
+            this.draft = reconciledSettings;
+            this.baseline = reconciledSettings;
+            this.phase = "ready";
+        } catch (error) {
+            if (operation !== this.operationVersion || !this.isConnected) return;
+            this.stopWatchingSettings();
+            this.draft = null;
+            this.baseline = null;
+            this.phase = "error";
+            this.loadError = error instanceof Error ? error.message : "未知错误";
         }
+    }
+
+    private handleExternalSettings(
+        settings: ExtensionSettings,
+        metadata: SettingsWatchMetadata,
+    ): void {
+        const sequence = ++this.watchSequence;
+        const nextSettings = mergeSettings(settings);
+        const revision = metadata.revision;
+        const pendingSave = this.pendingSave;
+        if (revision !== null && pendingSave && revision === pendingSave.revision) {
+            this.retainedSaveAcknowledgementRevisions.delete(revision);
+            pendingSave.ownWatchSequence = sequence;
+            return;
+        }
+        if (revision !== null && this.retainedSaveAcknowledgementRevisions.delete(revision)) return;
+        if (!this.draft || !this.baseline) return;
+
+        if (this.conflict || this.phase === "saving" || (this.phase === "ready" && this.isDirty)) {
+            this.conflict = { settings: nextSettings, sequence };
+            this.clearStatus();
+            return;
+        }
+        if (this.phase !== "ready") return;
+
+        this.draft = nextSettings;
+        this.baseline = nextSettings;
+        this.conflict = null;
+        this.clearStatus();
     }
 
     private handleFieldChange = (event: Event): void => {
         const field = event.currentTarget as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        if (this.phase !== "ready" || !this.draft) {
+            const draft = this.draft;
+            if (draft) {
+                const currentValues: Record<string, string | boolean> = {
+                    defaultTab: draft.defaultTab,
+                    generationEnabled: draft.generationEnabled,
+                    copyFormat: draft.copyFormat,
+                    downloadFormat: draft.downloadFormat,
+                };
+                const currentValue = currentValues[field.name];
+                if (field instanceof HTMLInputElement && field.type === "checkbox") {
+                    field.checked = Boolean(currentValue);
+                } else if (typeof currentValue === "string") {
+                    field.value = currentValue;
+                }
+            }
+            return;
+        }
         const nextValue = field instanceof HTMLInputElement && field.type === "checkbox" ? field.checked : field.value;
-        this.settings = mergeSettings({
-            ...this.settings,
+        this.draft = {
+            ...this.draft,
             [field.name]: nextValue,
-        });
-        this.statusTone = "idle";
+        };
+        this.clearStatus();
     };
 
-    private handleGenerationModelChange = (task: keyof ExtensionSettings["generationModels"], event: Event): void => {
+    private handleGenerationApiKeyChange = (event: Event): void => {
         const field = event.currentTarget as HTMLInputElement;
-        this.settings = mergeSettings({
-            ...this.settings,
-            generationModels: {
-                ...this.settings.generationModels,
-                [task]: field.value,
+        if (this.phase !== "ready" || !this.draft) {
+            const draft = this.draft;
+            if (draft) {
+                field.value = draft.generationProviderSettings[draft.generationProvider].apiKey;
+            }
+            return;
+        }
+        const provider = this.draft.generationProvider;
+        const selectedProfile = this.draft.generationProviderSettings[provider];
+
+        this.draft = {
+            ...this.draft,
+            generationProviderSettings: {
+                ...this.draft.generationProviderSettings,
+                [provider]: {
+                    ...selectedProfile,
+                    apiKey: field.value,
+                },
             },
-        });
-        this.statusTone = "idle";
+        };
+        this.clearStatus();
+    };
+
+    private handleGenerationModelChange = (task: keyof GenerationModels, event: Event): void => {
+        const field = event.currentTarget as HTMLInputElement;
+        if (this.phase !== "ready" || !this.draft) {
+            const draft = this.draft;
+            if (draft) {
+                field.value = draft.generationProviderSettings[draft.generationProvider].models[task];
+            }
+            return;
+        }
+        const provider = this.draft.generationProvider;
+        const selectedProfile = this.draft.generationProviderSettings[provider];
+
+        this.draft = {
+            ...this.draft,
+            generationProviderSettings: {
+                ...this.draft.generationProviderSettings,
+                [provider]: {
+                    ...selectedProfile,
+                    models: {
+                        ...selectedProfile.models,
+                        [task]: field.value,
+                    },
+                },
+            },
+        };
+        this.clearStatus();
     };
 
     private handleGenerationPromptTemplateChange = (
@@ -546,42 +751,110 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         event: Event,
     ): void => {
         const field = event.currentTarget as HTMLTextAreaElement;
-        this.settings = mergeSettings({
-            ...this.settings,
+        if (this.phase !== "ready" || !this.draft) {
+            if (this.draft) field.value = this.draft.generationPromptTemplates[task];
+            return;
+        }
+        this.draft = {
+            ...this.draft,
             generationPromptTemplates: {
-                ...this.settings.generationPromptTemplates,
+                ...this.draft.generationPromptTemplates,
                 [task]: field.value,
             },
-        });
-        this.statusTone = "idle";
+        };
+        this.clearStatus();
     };
 
     private setProvider(provider: GenerationProvider): void {
-        this.settings = mergeSettings({
-            ...this.settings,
+        if (this.phase !== "ready" || !this.draft) return;
+        this.draft = {
+            ...this.draft,
             generationProvider: provider,
-        });
-        this.statusTone = "idle";
+        };
+        this.clearStatus();
     }
 
     private handleReset(): void {
-        this.settings = mergeSettings(DEFAULT_SETTINGS);
-        this.statusTone = "idle";
+        if (this.phase !== "ready" || !this.draft) return;
+        this.draft = mergeSettings(DEFAULT_SETTINGS);
+        this.clearStatus();
+    }
+
+    private handleRetry(): void {
+        if (this.phase !== "error") return;
+        void this.loadSettings();
+    }
+
+    private handleLoadExternal(): void {
+        if (this.phase !== "ready" || !this.conflict) return;
+        this.draft = this.conflict.settings;
+        this.baseline = this.conflict.settings;
+        this.conflict = null;
+        this.clearStatus();
+    }
+
+    private handleKeepLocal(): void {
+        if (this.phase !== "ready" || !this.conflict || !this.draft) return;
+        this.baseline = this.conflict.settings;
+        this.conflict = null;
+        this.clearStatus();
+    }
+
+    private toggleApiKeyVisibility(): void {
+        if (this.phase !== "ready") return;
+        this.showApiKey = !this.showApiKey;
     }
 
     private async handleSubmit(): Promise<void> {
-        this.isSaving = true;
-        this.statusTone = "idle";
+        if (this.phase !== "ready" || !this.draft || this.conflict) return;
+
+        const operation = this.operationVersion;
+        const snapshot = this.draft;
+        const revision = createSettingsWriteRevision();
+        const pendingSave: PendingSave = {
+            revision,
+            ownWatchSequence: null,
+        };
+        this.pendingSave = pendingSave;
+        this.phase = "saving";
+        this.clearStatus();
+
         try {
-            this.settings = await saveSettings(this.settings);
+            const savedSettings = await saveSettings(snapshot, revision);
+            if (operation !== this.operationVersion || !this.isConnected) return;
+
+            this.baseline = savedSettings;
+            const ownWatchSequence = pendingSave.ownWatchSequence;
+            const conflict = this.conflict as ExternalConflict | null;
+            if (!conflict
+                || (ownWatchSequence !== null && conflict.sequence <= ownWatchSequence)) {
+                this.conflict = null;
+            }
+            if (ownWatchSequence === null) {
+                if (this.retainedSaveAcknowledgementRevisions.size >= MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS) {
+                    const oldestRevision = this.retainedSaveAcknowledgementRevisions.values().next().value;
+                    if (oldestRevision !== undefined) {
+                        this.retainedSaveAcknowledgementRevisions.delete(oldestRevision);
+                    }
+                }
+                this.retainedSaveAcknowledgementRevisions.add(pendingSave.revision);
+            }
+            this.pendingSave = null;
+            this.phase = "ready";
             this.statusTone = "success";
             this.statusMessage = "设置已成功保存 ✓";
-            setTimeout(() => { this.statusTone = "idle"; }, 3000);
+            this.statusTimer = setTimeout(() => {
+                this.statusTimer = null;
+                if (operation !== this.operationVersion || !this.isConnected) return;
+                this.statusTone = "idle";
+                this.statusMessage = "";
+            }, 3000);
         } catch {
+            if (operation !== this.operationVersion || !this.isConnected) return;
+            this.pendingSave = null;
+            this.phase = "ready";
             this.statusTone = "error";
             this.statusMessage = "保存失败，请重试";
-        } finally {
-            this.isSaving = false;
         }
     }
 
@@ -601,13 +874,15 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
     // ===== Render Tabs =====
     private renderGeneral() {
+        const settings = this.draft;
+        if (!settings) return html``;
         return html`
             <h2 class="section-title">通用设置</h2>
             <p class="section-desc">控制面板的默认行为和显示偏好。</p>
 
             <div class="form-group">
                 <label>默认标签页</label>
-                <select class="form-control" name="defaultTab" .value=${this.settings.defaultTab} @change=${this.handleFieldChange}>
+                <select class="form-control" name="defaultTab" .value=${settings.defaultTab} @change=${this.handleFieldChange}>
                     <option value="original">原文</option>
                     <option value="intensive">精读</option>
                     <option value="overview">总览</option>
@@ -623,7 +898,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     <p class="toggle-desc">用于总览、精读和 Markdown Note 生成。关闭后仍可查看原文字幕。</p>
                 </div>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="generationEnabled" .checked=${this.settings.generationEnabled} @change=${this.handleFieldChange} />
+                    <input type="checkbox" name="generationEnabled" .checked=${settings.generationEnabled} @change=${this.handleFieldChange} />
                     <span class="toggle-slider"></span>
                 </label>
             </div>
@@ -631,10 +906,11 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     }
 
     private renderGeneration() {
-        const isApiKeySet = this.settings.generationApiKey.length > 0;
-        const modelPlaceholder = this.settings.generationProvider === "openai"
-            ? "gpt-4o-mini"
-            : "deepseek-v4-flash";
+        const settings = this.draft;
+        if (!settings) return html``;
+        const selectedProvider = getGenerationProvider(settings.generationProvider);
+        const selectedProfile = settings.generationProviderSettings[settings.generationProvider];
+        const isApiKeySet = selectedProfile.apiKey.trim().length > 0;
 
         return html`
             <h2 class="section-title">AI 生成引擎</h2>
@@ -643,18 +919,18 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             <div class="form-group">
                 <label>模型提供商</label>
                 <div class="provider-badges">
-                    <button class="provider-badge ${this.settings.generationProvider === 'openai' ? 'active' : ''}" @click=${() => this.setProvider('openai')}>
-                        OpenAI
-                    </button>
-                    <button class="provider-badge ${this.settings.generationProvider === 'deepseek' ? 'active' : ''}" @click=${() => this.setProvider('deepseek')}>
-                        DeepSeek
-                    </button>
+                    ${GENERATION_PROVIDERS.map((provider) => html`
+                        <button
+                            type="button"
+                            class="provider-badge ${settings.generationProvider === provider.id ? 'active' : ''}"
+                            data-provider=${provider.id}
+                            @click=${() => this.setProvider(provider.id)}
+                        >
+                            ${provider.label}
+                        </button>
+                    `)}
                 </div>
-                <p class="hint">
-                    ${this.settings.generationProvider === 'openai'
-                ? '使用 OpenAI API。请在下方为总览和精读填写明确模型名。'
-                : '使用 DeepSeek 模型。默认使用 deepseek-v4-flash。'}
-                </p>
+                <p class="hint">${selectedProvider.modelHelpText}</p>
             </div>
 
             <div class="form-group">
@@ -663,8 +939,8 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     ${isApiKeySet ? html`<span style="font-size: 12px; color: var(--success);">● 已配置</span>` : html`<span style="font-size: 12px; color: var(--warning);">○ 未配置</span>`}
                 </div>
                 <div class="api-key-wrapper">
-                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${this.settings.generationApiKey} @input=${this.handleFieldChange} placeholder="${this.settings.generationProvider === 'openai' ? 'sk-...' : 'sk-...'}" />
-                    <button class="toggle-visibility-btn" @click=${() => this.showApiKey = !this.showApiKey} title="${this.showApiKey ? '隐藏' : '显示'}">
+                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${selectedProfile.apiKey} @input=${this.handleGenerationApiKeyChange} placeholder="sk-..." />
+                    <button type="button" class="toggle-visibility-btn" @click=${this.toggleApiKeyVisibility} title="${this.showApiKey ? '隐藏' : '显示'}">
                         ${this.showApiKey
                 ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
                 : html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`
@@ -672,21 +948,19 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                     </button>
                 </div>
                 <p class="hint">
-                    ${this.settings.generationProvider === 'openai'
-                ? html`前往 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a> 获取 API Key。`
-                : html`前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek Platform</a> 获取 API Key。`}
+                    前往 <a href=${selectedProvider.apiKeyHelpUrl} target="_blank">${selectedProvider.label} Platform</a> 获取 API Key。
                 </p>
             </div>
 
             <div class="form-group">
                 <label>总览模型</label>
-                <input class="form-control" type="text" .value=${this.settings.generationModels.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${modelPlaceholder} />
-                <p class="hint">用于生成 overview 总览。DeepSeek 可留空使用默认模型；OpenAI 需要填写。</p>
+                <input class="form-control" type="text" data-task="overview" .value=${selectedProfile.models.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${selectedProvider.modelPlaceholder} />
+                <p class="hint">用于生成 overview 总览。${selectedProvider.modelHelpText}</p>
             </div>
 
             <div class="form-group">
                 <label>精读模型</label>
-                <input class="form-control" type="text" .value=${this.settings.generationModels.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${modelPlaceholder} />
+                <input class="form-control" type="text" data-task="intensive" .value=${selectedProfile.models.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${selectedProvider.modelPlaceholder} />
                 <p class="hint">用于生成 intensive 精读稿。Markdown Note 暂时跟随精读模型。</p>
             </div>
 
@@ -694,26 +968,28 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>总览 Prompt 模板</label>
-                <textarea class="form-control" .value=${this.settings.generationPromptTemplates.overview} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("overview", event)} placeholder="例如：优先提取判断、结论、是否值得看原视频。" rows="4"></textarea>
+                <textarea class="form-control" .value=${settings.generationPromptTemplates.overview} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("overview", event)} placeholder="例如：优先提取判断、结论、是否值得看原视频。" rows="4"></textarea>
                 <p class="hint">作为补充指令附加到 overview 总览生成中。</p>
             </div>
 
             <div class="form-group">
                 <label>精读 Prompt 模板</label>
-                <textarea class="form-control" .value=${this.settings.generationPromptTemplates.intensive} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("intensive", event)} placeholder="例如：保留论证链、关键例子和可复用方法。" rows="4"></textarea>
+                <textarea class="form-control" .value=${settings.generationPromptTemplates.intensive} @input=${(event: Event) => this.handleGenerationPromptTemplateChange("intensive", event)} placeholder="例如：保留论证链、关键例子和可复用方法。" rows="4"></textarea>
                 <p class="hint">作为补充指令附加到 intensive 精读生成中。Markdown Note 暂时跟随精读 Prompt。</p>
             </div>
         `;
     }
 
     private renderExport() {
+        const settings = this.draft;
+        if (!settings) return html``;
         return html`
             <h2 class="section-title">导出与复制</h2>
             <p class="section-desc">配置面板标题栏复制或下载原字幕时使用的默认格式。Markdown Note 使用独立导出动作。</p>
 
             <div class="form-group">
                 <label>复制格式</label>
-                <select class="form-control" name="copyFormat" .value=${this.settings.copyFormat} @change=${this.handleFieldChange}>
+                <select class="form-control" name="copyFormat" .value=${settings.copyFormat} @change=${this.handleFieldChange}>
                     <option value="readable_text">纯文本（适合阅读）</option>
                     <option value="timestamped_text">带时间戳的文本</option>
                 </select>
@@ -722,7 +998,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             
             <div class="form-group">
                 <label>下载格式</label>
-                <select class="form-control" name="downloadFormat" .value=${this.settings.downloadFormat} @change=${this.handleFieldChange}>
+                <select class="form-control" name="downloadFormat" .value=${settings.downloadFormat} @change=${this.handleFieldChange}>
                     <option value="txt">TXT 纯文本</option>
                     <option value="srt">SRT 字幕文件</option>
                 </select>
@@ -797,21 +1073,57 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                 </div>
 
                 <div class="content">
-                    ${tabContent()}
+                    ${this.currentTab === "about" ? this.renderAbout() : html`
+                        ${this.phase === "loading" ? html`
+                            <div class="lifecycle-state" role="status">正在加载设置…</div>
+                        ` : ""}
+                        ${this.phase === "error" ? html`
+                            <div class="lifecycle-state" role="alert">
+                                <p>无法加载设置：${this.loadError}</p>
+                                <button type="button" class="btn btn-ghost" @click=${this.handleRetry}>重试</button>
+                            </div>
+                        ` : ""}
 
-                    ${this.currentTab !== "about" ? html`
-                        <div class="footer-actions">
-                            <button class="btn btn-primary" @click=${this.handleSubmit} ?disabled=${this.isSaving}>
-                                ${this.isSaving ? "保存中..." : "保存设置"}
-                            </button>
-                            <button class="btn btn-ghost" @click=${() => this.handleReset()}>
-                                恢复默认
-                            </button>
-                            <span class="status-msg ${this.statusTone} ${this.statusTone !== 'idle' ? 'visible' : ''}">
-                                ${this.statusMessage}
-                            </span>
-                        </div>
-                    ` : ""}
+                        <fieldset class="settings-fieldset" ?disabled=${this.phase !== "ready"}>
+                            ${this.draft ? tabContent() : ""}
+
+                            ${this.conflict ? html`
+                                <div class="warning-banner conflict-banner">
+                                    检测到其他设置页面保存了更新。请选择要使用的版本。
+                                    <div class="conflict-actions">
+                                        <button type="button" class="btn btn-ghost" @click=${this.handleLoadExternal}>
+                                            载入外部设置
+                                        </button>
+                                        <button type="button" class="btn btn-ghost" @click=${this.handleKeepLocal}>
+                                            保留当前编辑
+                                        </button>
+                                    </div>
+                                </div>
+                            ` : ""}
+
+                            <div class="footer-actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-primary"
+                                    @click=${this.handleSubmit}
+                                    ?disabled=${this.phase !== "ready" || !this.draft || this.conflict !== null}
+                                >
+                                    ${this.phase === "saving" ? "保存中..." : "保存设置"}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost"
+                                    @click=${this.handleReset}
+                                    ?disabled=${this.phase !== "ready" || !this.draft}
+                                >
+                                    恢复默认
+                                </button>
+                                <span class="status-msg ${this.statusTone} ${this.statusTone !== 'idle' ? 'visible' : ''}">
+                                    ${this.statusMessage}
+                                </span>
+                            </div>
+                        </fieldset>
+                    `}
                 </div>
             </div>
         `;

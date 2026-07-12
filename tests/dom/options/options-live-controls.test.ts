@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
 
 const storageMocks = vi.hoisted(() => ({
+    createSettingsWriteRevision: vi.fn(),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
+    watchSettings: vi.fn(),
 }));
 vi.mock("../../../src/settings/storage", () => storageMocks);
 import { ReadableCaptionsOptionsApp } from "../../../src/options/index";
@@ -38,6 +40,7 @@ function clickByText(root: ShadowRoot, text: string): void {
 
 beforeEach(() => {
     document.body.replaceChildren();
+    storageMocks.createSettingsWriteRevision.mockReset().mockReturnValue("live-controls-write-revision-001");
     storageMocks.getSettings.mockReset().mockResolvedValue({
         ...DEFAULT_SETTINGS,
         defaultTab: "intensive",
@@ -46,6 +49,7 @@ beforeEach(() => {
         downloadFormat: "srt",
     });
     storageMocks.saveSettings.mockReset().mockImplementation(async (settings) => settings);
+    storageMocks.watchSettings.mockReset().mockReturnValue(vi.fn());
 });
 afterEach(() => document.body.replaceChildren());
 
@@ -104,6 +108,6 @@ describe("Options live controls", () => {
             generationEnabled: true,
             copyFormat: "readable_text",
             downloadFormat: "txt",
-        }));
+        }), "live-controls-write-revision-001");
     });
 });

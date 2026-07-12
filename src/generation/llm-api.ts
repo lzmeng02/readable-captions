@@ -1,19 +1,12 @@
 import type { ExtensionSettings } from "../settings/types";
+import { GenerationUserError } from "./errors";
+import { getGenerationProvider, resolveGenerationProviderModel } from "./provider-catalog";
+import type {
+    GenerationStreamDecoderId,
+    ProviderChatMessage,
+} from "./provider-catalog";
 import { consumeChatSse, createChatStreamState, finalizeChatSse } from "./sse";
 import type { GenerationMetadata, GenerationRequest, GenerationTask } from "./types";
-
-type ChatMessage = {
-    role: "system" | "user";
-    content: string;
-};
-
-type ChatCompletionRequestBody = {
-    model: string;
-    messages: ChatMessage[];
-    stream: true;
-    thinking?: { type: "enabled" };
-    reasoning_effort?: "high";
-};
 
 type StreamGenerationFromApiOptions = {
     settings: ExtensionSettings;
@@ -21,23 +14,6 @@ type StreamGenerationFromApiOptions = {
     signal: AbortSignal;
     onToken: (deltaText: string) => void;
 };
-
-const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
-const DEFAULT_REASONING_EFFORT = "high";
-const DEFAULT_DEEPSEEK_THINKING = { type: "enabled" } as const;
-
-function buildChatCompletionBody(
-    provider: ExtensionSettings["generationProvider"],
-    model: string,
-    messages: ChatMessage[],
-): ChatCompletionRequestBody {
-    const body: ChatCompletionRequestBody = { model, messages, stream: true };
-    if (provider === "deepseek") {
-        body.thinking = DEFAULT_DEEPSEEK_THINKING;
-        body.reasoning_effort = DEFAULT_REASONING_EFFORT;
-    }
-    return body;
-}
 
 const GENERATOR_PROMPT = `
 你是 Readable Captions 的 Overview 生成器。
@@ -132,31 +108,20 @@ const NOTE_PROMPT = `
 - 输出完整 Markdown，不要包裹代码块。
 `.trim();
 
-function resolveEndpoint(provider: ExtensionSettings["generationProvider"]): string {
-    return provider === "deepseek"
-        ? "https://api.deepseek.com/chat/completions"
-        : "https://api.openai.com/v1/chat/completions";
-}
-
 function resolveConfiguredModel(settings: ExtensionSettings, task: GenerationTask): string {
+    const models = settings.generationProviderSettings[settings.generationProvider].models;
     if (task === "overview") {
-        return settings.generationModels.overview;
+        return models.overview;
     }
 
-    return settings.generationModels.intensive;
+    return models.intensive;
 }
 
 function resolveModel(settings: ExtensionSettings, task: GenerationTask): string {
-    const configuredModel = resolveConfiguredModel(settings, task).trim();
-    if (configuredModel.length > 0) {
-        return configuredModel;
-    }
-
-    if (settings.generationProvider === "deepseek") {
-        return DEFAULT_DEEPSEEK_MODEL;
-    }
-
-    throw new Error("OpenAI model is not set. Please configure a model in the extension options.");
+    return resolveGenerationProviderModel(
+        settings.generationProvider,
+        resolveConfiguredModel(settings, task),
+    );
 }
 
 function resolvePromptTemplate(settings: ExtensionSettings, task: GenerationTask): string {
@@ -217,7 +182,7 @@ function formatMetadata(metadata: GenerationMetadata | undefined): string {
     return lines.join("\n");
 }
 
-function buildMessages(settings: ExtensionSettings, request: GenerationRequest): ChatMessage[] {
+function buildMessages(settings: ExtensionSettings, request: GenerationRequest): ProviderChatMessage[] {
     const transcriptText = request.transcript
         .map((line) => `${formatTimestamp(line.from)} ${line.content}`)
         .join("\n");
@@ -231,71 +196,88 @@ function buildMessages(settings: ExtensionSettings, request: GenerationRequest):
     ];
 }
 
-function getApiErrorMessage(value: unknown): string | null {
-    if (typeof value !== "object" || value === null) {
-        return null;
-    }
+type ProviderStreamDecoderOptions = {
+    body: ReadableStream<Uint8Array> | null;
+    signal: AbortSignal;
+    onToken: (deltaText: string) => void;
+};
 
-    const record = value as Record<string, unknown>;
-    const error = record.error;
-    if (typeof error !== "object" || error === null) {
-        return null;
-    }
+type ProviderStreamDecoder = (options: ProviderStreamDecoderOptions) => Promise<string>;
 
-    const message = (error as Record<string, unknown>).message;
-    return typeof message === "string" && message.length > 0 ? message : null;
-}
-
-export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
-    const apiKey = options.settings.generationApiKey.trim();
-    if (!apiKey) {
-        throw new Error("API Key is not set. Please configure it in the extension options.");
-    }
-
-    const messages = buildMessages(options.settings, options.request);
-
-    const response = await fetch(resolveEndpoint(options.settings.generationProvider), {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(buildChatCompletionBody(
-            options.settings.generationProvider,
-            resolveModel(options.settings, options.request.task),
-            messages,
-        )),
-        signal: options.signal,
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        const errorMessage = getApiErrorMessage(errorData) ?? response.statusText;
-        throw new Error(`API error (${response.status}): ${errorMessage}`);
-    }
-
-    const reader = response.body?.getReader();
+const decodeChatCompletionsSse: ProviderStreamDecoder = async ({ body, signal, onToken }) => {
+    const reader = body?.getReader();
     if (!reader) {
-        throw new Error("Response body is not readable.");
+        throw new GenerationUserError("provider-response-invalid");
     }
 
     const decoder = new TextDecoder();
     const streamState = createChatStreamState();
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            for (const update of consumeChatSse(streamState, decoder.decode(value, { stream: true }))) {
+                onToken(update.delta);
+            }
         }
 
-        for (const update of consumeChatSse(streamState, decoder.decode(value, { stream: true }))) {
-            options.onToken(update.delta);
+        for (const update of consumeChatSse(streamState, decoder.decode())) {
+            onToken(update.delta);
         }
+
+        return finalizeChatSse(streamState);
+    } catch (error) {
+        if (signal.aborted || error instanceof GenerationUserError) throw error;
+        throw new GenerationUserError("provider-response-invalid");
+    }
+};
+
+const PROVIDER_STREAM_DECODERS = {
+    "chat-completions-sse": decodeChatCompletionsSse,
+} satisfies Record<GenerationStreamDecoderId, ProviderStreamDecoder>;
+
+export async function streamGenerationFromApi(options: StreamGenerationFromApiOptions): Promise<string> {
+    const provider = getGenerationProvider(options.settings.generationProvider);
+    const selectedProfile = options.settings.generationProviderSettings[options.settings.generationProvider];
+    const apiKey = selectedProfile.apiKey.trim();
+    if (!apiKey) {
+        throw new GenerationUserError("api-key-missing");
     }
 
-    for (const update of consumeChatSse(streamState, decoder.decode())) {
-        options.onToken(update.delta);
+    const messages = buildMessages(options.settings, options.request);
+    const providerRequest = provider.buildRequest({
+        apiKey,
+        model: resolveModel(options.settings, options.request.task),
+        messages,
+    });
+
+    let response: Response;
+    try {
+        response = await fetch(providerRequest.url, {
+            method: "POST",
+            headers: providerRequest.headers,
+            body: JSON.stringify(providerRequest.body),
+            signal: options.signal,
+        });
+    } catch (error) {
+        if (options.signal.aborted) throw error;
+        throw new GenerationUserError("provider-unavailable");
     }
 
-    return finalizeChatSse(streamState);
+    if (!response.ok) {
+        throw new GenerationUserError("provider-rejected");
+    }
+
+    const streamDecoder = PROVIDER_STREAM_DECODERS[providerRequest.streamDecoder];
+    if (!streamDecoder) {
+        throw new GenerationUserError("provider-response-invalid");
+    }
+
+    return streamDecoder({
+        body: response.body,
+        signal: options.signal,
+        onToken: options.onToken,
+    });
 }

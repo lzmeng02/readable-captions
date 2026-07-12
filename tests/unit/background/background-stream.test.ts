@@ -5,6 +5,7 @@ import {
     type KeepAliveRunner,
 } from "../../../src/generation/background-stream";
 import type { GenerationRequest } from "../../../src/generation/types";
+import { GenerationUserError } from "../../../src/generation/errors";
 import { createSettings, generationRequest } from "../../helpers/generation";
 import { createFakeRuntimePort } from "../../helpers/runtime-port";
 
@@ -41,6 +42,25 @@ function createDependencies(
 }
 
 describe("attachGenerationStreamPort", () => {
+    it("does not start keepalive or a provider request when generation is disabled", async () => {
+        const fake = createFakeRuntimePort();
+        const keepAlive = vi.fn<KeepAliveRunner>((work) => work());
+        const streamGenerationFromApi = vi.fn(async () => "unexpected");
+        attachGenerationStreamPort(fake.port, createDependencies({
+            getSettings: vi.fn(async () => createSettings({ generationEnabled: false })),
+            keepAlive,
+            streamGenerationFromApi,
+        }));
+        fake.emitMessage({ type: "start", request: generationRequest });
+        await flushPromises();
+        expect(keepAlive).not.toHaveBeenCalled();
+        expect(streamGenerationFromApi).not.toHaveBeenCalled();
+        expect(fake.postedMessages).toEqual([{
+            type: "error",
+            code: "generation-disabled",
+        }]);
+    });
+
     it("streams API deltas and the canonical final text through one keepalive request", async () => {
         const fake = createFakeRuntimePort();
         const settings = createSettings();
@@ -80,11 +100,12 @@ describe("attachGenerationStreamPort", () => {
         ]);
     });
 
-    it("reports settings and API failures without changing their messages", async () => {
+    it("maps dependency failures to bounded error codes without posting their details", async () => {
+        const leakMarker = "oa-test-key";
         const settingsFailure = createFakeRuntimePort();
         attachGenerationStreamPort(settingsFailure.port, createDependencies({
             getSettings: vi.fn(async () => {
-                throw new Error("settings unavailable");
+                throw new Error(`settings unavailable ${leakMarker}`);
             }),
         }));
 
@@ -92,13 +113,14 @@ describe("attachGenerationStreamPort", () => {
         await flushPromises();
 
         expect(settingsFailure.postedMessages).toEqual([
-            { type: "error", message: "settings unavailable" },
+            { type: "error", code: "settings-unavailable" },
         ]);
+        expect(JSON.stringify(settingsFailure.postedMessages)).not.toContain(leakMarker);
 
         const apiFailure = createFakeRuntimePort();
         attachGenerationStreamPort(apiFailure.port, createDependencies({
             streamGenerationFromApi: vi.fn(async () => {
-                throw new Error("API error (401): denied");
+                throw new Error(`provider failure ${leakMarker}`);
             }),
         }));
 
@@ -106,7 +128,24 @@ describe("attachGenerationStreamPort", () => {
         await flushPromises();
 
         expect(apiFailure.postedMessages).toEqual([
-            { type: "error", message: "API error (401): denied" },
+            { type: "error", code: "generation-failed" },
+        ]);
+        expect(JSON.stringify(apiFailure.postedMessages)).not.toContain(leakMarker);
+    });
+
+    it("preserves a known configuration error as its validated code", async () => {
+        const fake = createFakeRuntimePort();
+        attachGenerationStreamPort(fake.port, createDependencies({
+            streamGenerationFromApi: vi.fn(async () => {
+                throw new GenerationUserError("api-key-missing");
+            }),
+        }));
+
+        fake.emitMessage({ type: "start", request: generationRequest });
+        await flushPromises();
+
+        expect(fake.postedMessages).toEqual([
+            { type: "error", code: "api-key-missing" },
         ]);
     });
 
@@ -129,7 +168,7 @@ describe("attachGenerationStreamPort", () => {
         expect(streamGenerationFromApi).toHaveBeenCalledOnce();
         expect(signals[0]?.aborted).toBe(false);
         expect(fake.postedMessages).toEqual([
-            { type: "error", message: "Invalid generation request." },
+            { type: "error", code: "invalid-request" },
         ]);
 
         first.resolve("still active");

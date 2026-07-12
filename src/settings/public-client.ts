@@ -1,5 +1,4 @@
 import {
-    DEFAULT_PUBLIC_SETTINGS,
     isPublicSettingsPortMessage,
     PUBLIC_SETTINGS_PORT,
 } from "./public";
@@ -26,51 +25,89 @@ function getExtensionChrome(): ExtensionChrome | null {
     return (globalThis as typeof globalThis & { chrome?: ExtensionChrome }).chrome ?? null;
 }
 
-export function watchPublicSettings(listener: (settings: PublicExtensionSettings) => void): () => void {
+function toError(errorValue: unknown): Error {
+    if (errorValue instanceof Error) {
+        return errorValue;
+    }
+
+    return new Error(typeof errorValue === "string"
+        ? errorValue
+        : "Failed to connect public settings port.");
+}
+
+export function watchPublicSettings(
+    onSettings: (settings: PublicExtensionSettings) => void,
+    onError: (error: Error) => void,
+): () => void {
     let port: RuntimePort | null = null;
-    let disconnected = false;
+    let stopped = false;
+    let connectionClosed = false;
+    let hasReceivedSettings = false;
+    let errorReported = false;
+    let connectionError: Error | null = null;
+
+    const reportError = (error: Error): void => {
+        if (stopped || errorReported) {
+            return;
+        }
+
+        errorReported = true;
+        onError(error);
+    };
 
     try {
         port = getExtensionChrome()?.runtime?.connect?.({ name: PUBLIC_SETTINGS_PORT }) ?? null;
     } catch (err) {
-        console.warn("Failed to connect public settings port", err);
+        connectionError = toError(err);
     }
 
     if (!port) {
         queueMicrotask(() => {
-            if (!disconnected) {
-                listener(DEFAULT_PUBLIC_SETTINGS);
-            }
+            reportError(connectionError ?? new Error("Public settings port is unavailable."));
         });
         return () => {
-            disconnected = true;
+            stopped = true;
         };
     }
 
     port.onMessage.addListener((message) => {
-        if (!isPublicSettingsPortMessage(message) || disconnected) {
+        if (!isPublicSettingsPortMessage(message) || stopped || connectionClosed) {
             return;
         }
 
         if (message.type === "settings") {
-            listener(message.settings);
+            hasReceivedSettings = true;
+            onSettings(message.settings);
         } else {
-            console.error("Readable Captions settings error", message.message);
+            reportError(new Error(message.message));
         }
     });
 
     port.onDisconnect.addListener(() => {
-        disconnected = true;
+        if (stopped || connectionClosed) {
+            return;
+        }
+
+        connectionClosed = true;
         port = null;
+        if (!hasReceivedSettings) {
+            reportError(new Error("Public settings port disconnected before settings were received."));
+        }
     });
 
     return () => {
-        disconnected = true;
+        if (stopped) {
+            return;
+        }
+
+        stopped = true;
+        connectionClosed = true;
+        const activePort = port;
+        port = null;
         try {
-            port?.disconnect();
+            activePort?.disconnect();
         } catch {
             // The port may already be closed.
         }
-        port = null;
     };
 }

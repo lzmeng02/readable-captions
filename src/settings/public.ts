@@ -1,4 +1,10 @@
+import { DEFAULT_SETTINGS } from "./defaults";
 import type { ExtensionSettings, PublicExtensionSettings } from "./types";
+import {
+    COPY_FORMAT_VALUES,
+    DEFAULT_TAB_VALUES,
+    DOWNLOAD_FORMAT_VALUES,
+} from "./types";
 
 export const PUBLIC_SETTINGS_PORT = "readable-captions-public-settings";
 
@@ -12,40 +18,22 @@ export type PublicSettingsPortMessage =
         message: string;
     };
 
-function hashString(value: string): string {
-    let hash = 2166136261;
+function digestString(value: string): string {
+    let hash = 0xcbf29ce484222325n;
     for (let i = 0; i < value.length; i += 1) {
-        hash ^= value.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
+        hash ^= BigInt(value.charCodeAt(i));
+        hash = BigInt.asUintN(64, hash * 0x100000001b3n);
     }
 
-    return (hash >>> 0).toString(36);
+    return hash.toString(36).padStart(13, "0");
 }
 
-export const DEFAULT_PUBLIC_SETTINGS: PublicExtensionSettings = {
-    defaultTab: "original",
-    generationEnabled: true,
-    copyFormat: "readable_text",
-    downloadFormat: "txt",
-    generationSettingsKey: hashString(JSON.stringify({
-        provider: "deepseek",
-        accessMode: "api_key",
-        models: {
-            overview: "",
-            intensive: "",
-        },
-        prompts: {
-            overview: "",
-            intensive: "",
-        },
-    })),
-};
-
 function getGenerationSettingsKey(settings: ExtensionSettings): string {
-    return hashString(JSON.stringify({
+    const selectedProfile = settings.generationProviderSettings[settings.generationProvider];
+
+    return digestString(JSON.stringify({
         provider: settings.generationProvider,
-        accessMode: settings.generationAccessMode,
-        models: settings.generationModels,
+        models: selectedProfile.models,
         prompts: settings.generationPromptTemplates,
     }));
 }
@@ -64,6 +52,8 @@ export function toPublicSettings(settings: ExtensionSettings): PublicExtensionSe
     };
 }
 
+export const DEFAULT_PUBLIC_SETTINGS = toPublicSettings(DEFAULT_SETTINGS);
+
 export function isPublicSettingsPortMessage(message: unknown): message is PublicSettingsPortMessage {
     if (!isRecord(message) || typeof message.type !== "string") {
         return false;
@@ -79,8 +69,11 @@ export function isPublicSettingsPortMessage(message: unknown): message is Public
 
     const settings = message.settings;
     return typeof settings.defaultTab === "string"
+        && DEFAULT_TAB_VALUES.includes(settings.defaultTab as ExtensionSettings["defaultTab"])
         && typeof settings.generationEnabled === "boolean"
         && typeof settings.copyFormat === "string"
+        && COPY_FORMAT_VALUES.includes(settings.copyFormat as ExtensionSettings["copyFormat"])
         && typeof settings.downloadFormat === "string"
+        && DOWNLOAD_FORMAT_VALUES.includes(settings.downloadFormat as ExtensionSettings["downloadFormat"])
         && typeof settings.generationSettingsKey === "string";
 }

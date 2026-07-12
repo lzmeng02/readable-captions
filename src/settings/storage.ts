@@ -36,6 +36,43 @@ type ExtensionChrome = {
 };
 
 const SETTINGS_STORAGE_KEY = "extensionSettings";
+const SETTINGS_STORAGE_VERSION = 1;
+
+export type SettingsWriteRevision = string;
+export type SettingsWatchMetadata = Readonly<{ revision: SettingsWriteRevision | null }>;
+
+type StoredSettingsEnvelope = {
+    storageVersion: typeof SETTINGS_STORAGE_VERSION;
+    revision: SettingsWriteRevision;
+    settings: ExtensionSettings;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function decodeStoredSettings(value: unknown): {
+    settings: ExtensionSettings;
+    metadata: SettingsWatchMetadata;
+} {
+    if (isRecord(value)
+        && value.storageVersion === SETTINGS_STORAGE_VERSION
+        && Object.hasOwn(value, "settings")) {
+        return {
+            settings: mergeSettings(value.settings),
+            metadata: {
+                revision: typeof value.revision === "string" && value.revision.length > 0
+                    ? value.revision
+                    : null,
+            },
+        };
+    }
+
+    return {
+        settings: mergeSettings(value),
+        metadata: { revision: null },
+    };
+}
 
 function getExtensionChrome(): ExtensionChrome | null {
     return (globalThis as typeof globalThis & { chrome?: ExtensionChrome }).chrome ?? null;
@@ -47,6 +84,10 @@ function getStorageArea(): ExtensionStorageArea | null {
 
 function getLastErrorMessage(extensionChrome: ExtensionChrome | null): string | null {
     return extensionChrome?.runtime?.lastError?.message ?? null;
+}
+
+export function createSettingsWriteRevision(): SettingsWriteRevision {
+    return globalThis.crypto.randomUUID();
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -64,12 +105,15 @@ export async function getSettings(): Promise<ExtensionSettings> {
                 return;
             }
 
-            resolve(mergeSettings(items[SETTINGS_STORAGE_KEY]));
+            resolve(decodeStoredSettings(items[SETTINGS_STORAGE_KEY]).settings);
         });
     });
 }
 
-export async function saveSettings(settings: ExtensionSettings): Promise<ExtensionSettings> {
+export async function saveSettings(
+    settings: ExtensionSettings,
+    revision: SettingsWriteRevision,
+): Promise<ExtensionSettings> {
     const extensionChrome = getExtensionChrome();
     const storage = getStorageArea();
     if (!storage) {
@@ -77,9 +121,14 @@ export async function saveSettings(settings: ExtensionSettings): Promise<Extensi
     }
 
     const nextSettings = mergeSettings(settings);
+    const storedSettings: StoredSettingsEnvelope = {
+        storageVersion: SETTINGS_STORAGE_VERSION,
+        revision,
+        settings: nextSettings,
+    };
 
     return new Promise((resolve, reject) => {
-        storage.set({ [SETTINGS_STORAGE_KEY]: nextSettings }, () => {
+        storage.set({ [SETTINGS_STORAGE_KEY]: storedSettings }, () => {
             const errorMessage = getLastErrorMessage(extensionChrome);
             if (errorMessage) {
                 reject(new Error(errorMessage));
@@ -117,7 +166,9 @@ export async function restrictStorageAccessToTrustedContexts(): Promise<void> {
     });
 }
 
-export function watchSettings(listener: (settings: ExtensionSettings) => void): () => void {
+export function watchSettings(
+    listener: (settings: ExtensionSettings, metadata: SettingsWatchMetadata) => void,
+): () => void {
     const storageChanges = getExtensionChrome()?.storage?.onChanged;
     if (!storageChanges) {
         return () => { };
@@ -133,7 +184,8 @@ export function watchSettings(listener: (settings: ExtensionSettings) => void): 
             return;
         }
 
-        listener(mergeSettings(settingsChange.newValue));
+        const { settings, metadata } = decodeStoredSettings(settingsChange.newValue);
+        listener(settings, metadata);
     };
 
     storageChanges.addListener(handleChange);

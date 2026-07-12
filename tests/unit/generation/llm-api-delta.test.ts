@@ -21,7 +21,9 @@ async function runSuccessfulStream(
     return streamGenerationFromApi({
         settings: createSettings({
             generationProvider: "openai",
-            generationModels: { overview: "gpt-4o-mini" },
+            generationProviderSettings: {
+                openai: { models: { overview: "gpt-4o-mini", intensive: "" } },
+            },
         }),
         request: generationRequest,
         signal: new AbortController().signal,

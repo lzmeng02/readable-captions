@@ -37,9 +37,9 @@ npm ci
 | `tests/unit/generation/` | provider payload、strict SSE、delta reconstruction、port protocol |
 | `tests/unit/background/` | settings boundary、request replacement/cancel/disconnect、request-scoped keepalive |
 | `tests/unit/panel/` | frame scheduler 与 suffix-only title extraction |
-| `tests/unit/settings/` | public settings 不含私密字段 |
-| `tests/dom/panel/` | panel lifecycle、语言 transaction、导出、可见 task frame coalescing |
-| `tests/dom/options/` | reset/save 后 live `.value`/`.checked` |
+| `tests/unit/settings/` | canonical provider profiles、legacy migration/storage、public projection/validation 与 public-client error contract |
+| `tests/dom/panel/` | panel lifecycle、settings readiness、语言 transaction、导出、可见 task frame coalescing |
+| `tests/dom/options/` | provider profile 隔离、load/save/conflict 状态机、reset/save 后 live `.value`/`.checked` |
 | `tests/integration/` | development/production Vite output 清理语义与 dev script 顺序 |
 
 常用 focused 示例：
@@ -124,8 +124,8 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | `src/content/**` | 首次挂载、非视频/视频路由切换、SPA 视频间跳转、DOM 重建后恢复 |
 | `src/platforms/**` | BV、av、分 P、watch-later URL；view 字幕、WBI fallback、无字幕、请求异常、语言切换 |
 | `src/panel/**` | 三 tab、折叠/menu、时间戳跳转、生成状态、Note drawer、复制/下载、Shadow DOM 样式隔离 |
-| `src/generation/**` 或 `src/background.ts` | start/cancel/token/done/error、OpenAI 与 DeepSeek payload、SSE 分块、断连与重试、Markdown 净化 |
-| `src/settings/**` 或 options | 默认值、保存/重载、storage watcher、旧字段迁移、各消费者的缓存失效 |
+| `src/generation/**`、`src/background.ts` 或 `src/background-app.ts` | start/cancel/token/done/error code、public snapshot/live ordering、OpenAI 与 DeepSeek payload、decoder dispatch、SSE 分块、断连与重试、Markdown 净化 |
+| `src/settings/**` 或 options | private envelope/legacy raw compatibility、per-write revision provenance、保存/重载、lossless watcher handoff、delayed own-save acknowledgement、旧字段迁移、各消费者的缓存失效 |
 | Vite config、入口或 manifest | 完整 `dist/` 文件、扩展加载、service worker、options、权限与 host access |
 
 ## Chrome smoke matrix
@@ -140,24 +140,42 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | SPA | Video → unsupported → video | One panel; old work/listeners disposed |
 | Host recovery | Remove `#readable-captions-root` | Same host/state returns once |
 | Languages | Switch B→C rapidly, then force failure | C wins; failure rolls back |
-| Providers | Generate with official OpenAI and DeepSeek | Compatible body and complete answer |
+| Provider profiles | DeepSeek → OpenAI → DeepSeek，再反向切换 | 两边 key/Overview/Intensive model 各自保留，不串用 |
+| Options persistence | 同时配置两边 profile，保存并重开 Options | OpenAI 与 DeepSeek profile 都保持 canonical 值 |
+| Options lifecycle | 注入 load failure/Retry；用两个 Options tab 测 clean/dirty update 和 X/no-ack → Z → X | 失败态不能保存 defaults；Retry 恢复；clean 自动更新，dirty 显式 conflict；未来同值 external write 不被旧 acknowledgement 吞掉 |
+| Panel settings | 延迟/破坏 public-settings 首次读取 | pending/error 明示；生成 tab、Note、copy/download fail closed，原文/设置仍可用 |
+| Generation disabled | 关闭生成后从 Panel/port 尝试 start | 无 keepalive、无外部 provider request，返回 disabled error |
+| Providers | 分别用获授权的 OpenAI 与 DeepSeek 凭据生成 | 每边只用自己的 profile/endpoint，payload 兼容并完成 streaming |
 | Streaming | Cancel/retry a long generation | No partial success; worker stays active |
 | Options | Change/reset/save General and Export controls | Displayed values equal saved values |
 | Dev | Start dev and trigger content rebuild | All five artifacts remain |
 | Titles | Export `GPT-5` and `A-B-C` videos | Hyphens preserved; invalid chars sanitized |
-| Security | Inspect messages and panel DOM | No API key/full settings exposure |
+| Security | Inspect generation/public messages、service-worker console 和 Panel DOM | No API key/full settings/provider error body exposure；generation error 只有 validated code/safe message |
 
 “Providers”需要获授权的真实凭据；“Subtitle URLs/Multipart”等依赖当日 Bilibili 页面状态。没有可用浏览器 session、测试 URL、故障注入或凭据时，相关行一律明确记录为未验证，绝不从 Vitest/build 推断为通过。
 
 ## 常见修改路径
 
+### 增加生成 Provider
+
+下面每一项都是必做项；catalog entry 只是接入起点：
+
+1. 在 `src/generation/provider-catalog.ts` 增加唯一 entry：stable `id`、label、API-key help URL、model placeholder/help、可选的 request-time `defaultModel`，以及构造 endpoint、Authorization、body 和 `streamDecoder` 的 `buildRequest()`。不要在 Options 或 `llm-api.ts` 再加一套 provider switch；新 decoder id 必须同时加入 exhaustive `Record<GenerationStreamDecoderId, ProviderStreamDecoder>` registry 并实现真实 adapter。显式 model/default 的判定继续走 catalog-owned `resolveGenerationProviderModel()`，错误使用 selected entry identity，不添加 provider-specific transport 分支。
+2. 在 `manifest.json` 为实际 API endpoint 加最小 `host_permissions`，运行完整 build，并核对 `dist/manifest.json` 与 service-worker Network。不要用宽泛 wildcard 代替已知 host。
+3. 当外部数据接收方变化时，更新 Chrome Web Store/发布流程中的 privacy disclosure 和任何面向用户的外发说明，明确 provider 会收到完整字幕、标题、URL、字幕来源及可用的 `aid`/`cid`。仓库当前没有独立 privacy-policy 文件，不能因此跳过这项；在交付记录中写明披露更新位置。
+4. 验证 canonical `generationProviderSettings[newId]` 是独立 profile，初始 key/model 不从其他 provider 复制；默认模型优先放在 catalog 作 request-time fallback。同步 `mergeSettings()` 的 normalize/migration 测试：新 schema 存在时绝不复活 globals；仅在缺失时迁移到 precedence 选中的单个 provider；`saveSettings()` envelope 的 settings payload 只保存 canonical profiles，revision 只作为 private provenance。
+5. 在 Options 中确认新按钮/label/help/placeholder 来自 catalog，key 与 Overview/Intensive model 只绑定 selected profile。实际填充并往返切换 **OpenAI、DeepSeek 和新 provider**，确认现有两份 profile 与新 profile 都不丢失；再 Save/reopen、Reset/save，确认每个 profile 都存在且无 legacy globals。
+6. 增加 focused tests：catalog adapter 的 URL/header/body/default model，selected-profile key/model 与 missing-key-before-fetch，decoder registry dispatch/exhaustiveness，settings defaults/normalization/migration/canonical save/secret-free 64-bit public digest，以及 `tests/dom/options/options-provider-profiles.test.ts` 的切换与持久化。fixture 只用明显的 fake key；provider HTTP/SSE/dependency leak tests 必须断言 fake marker 不进入 runtime message、DOM 或 log；如新增 decoder，再覆盖 chunk boundary、provider error 和 strict completion。
+7. 用真实 Chrome 加载新 build 做 smoke：处理新增 host permission，完成 profile 切换与 Options 重开，使用获授权的该 provider 测试账号完成一次 streaming，并在 service-worker Network 确认正确 endpoint、认证方式和 payload；再关闭 generation，确认没有外部请求。没有凭据或浏览器 session 时逐项写“未验证”和原因，不能用 Vitest/build 代替。
+8. 更新 [`architecture.md`](architecture.md) 的 provider 行为/外发数据与上面的 Chrome smoke 记录；不得把 API key、key-derived value 或真实账号信息写进 docs、fixture、日志或 commit。
+
 ### 增加或修改设置
 
 1. 在 `src/settings/types.ts` 更新类型和允许值。
 2. 在 `src/settings/defaults.ts` 设置默认值，并为旧数据补迁移/校验。
-3. 通过 `getSettings()`、`saveSettings()`、`watchSettings()` 消费；不要直接读写 storage key。
+3. 通过 `getSettings()`、`createSettingsWriteRevision()`、`saveSettings(settings, revision)`、`watchSettings()` 消费；不要直接读写 storage key。保持 private versioned envelope 与 legacy raw object 解包兼容，revision 只通过 watcher metadata 暴露给 trusted caller，不加入 `ExtensionSettings`。
 4. 更新 `src/options/index.ts` 和所有 runtime 消费者。
-5. 检查生成缓存 key 是否也应包含新字段。
+5. 检查生成缓存 key 是否也应包含新字段；只把 secret-free effective settings 放进 canonical digest input，保持固定 13 字符 64-bit public value，并覆盖 collision/API-key-independence regression。
 6. 更新架构中的 settings 表并执行设置 smoke tests。
 
 ### 修改字幕获取
@@ -171,15 +189,15 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 ### 修改生成流程
 
 1. 先更新 `src/generation/types.ts` 的任务/请求边界。
-2. 同步 `protocol.ts`、content-side `llm-provider.ts` 和 `background.ts` 的消息验证与取消语义。
-3. 把 LLM fetch 和 `Authorization` header 留在 background；generation port 不传 API key，content 的 public-settings port 只接收去私密字段后的设置。
+2. 同步 `protocol.ts`、content-side `llm-provider.ts`、`background-stream.ts` 和 `background-app.ts` 的消息验证、per-port ordering 与取消语义；generation error 只传 `GenerationErrorCode`，不要恢复任意 message string。
+3. 把 LLM fetch 和 `Authorization` header 留在 background；generation port 不传 API key、HTTP/SSE body 或 dependency `Error.message`，content 的 public-settings port 只接收去私密字段后的设置。
 4. 保持 raw-delta transport、strict SSE completion、request-scoped keepalive 和 Markdown 净化；验证 SSE 事件/UTF-8 可能跨 chunk 分割。
-5. 新设置或 provider 行为必须同步 Options、默认值/迁移、manifest 权限和两个 provider 的 smoke test。
+5. 新设置必须同步 Options、默认值/迁移与 cache identity；新增 provider 按上面的完整 checklist，不把“两个 provider smoke”当作可扩展接入方案。
 
 ### 修改 Panel UI
 
 1. 异步生成、settings watcher、实例生命周期和 cleanup 放在 `mount.ts`。
-2. `panel-view.ts` 当前包含 template/CSS、少量 module-level 状态、时间戳跳转和 Markdown 渲染；做聚焦修改时遵循这个真实边界，不假定它是纯函数。
+2. `panel-view.ts` 当前包含 template/CSS、module-level collapse 状态、时间戳跳转和 Markdown 渲染；More-menu state 属于 `mountPanel()` 实例。做聚焦修改时遵循这个真实边界，不假定 view 是纯函数。
 3. 保持 Shadow DOM 隔离和三视图产品边界。
 4. 新增长生命周期的 document/storage/runtime listener 时，在 session/panel cleanup 中成对注销，并为 replacement、unsupported route、host recovery 和 dispose 增加测试。
 5. 不把动态、不可信 Markdown 直接交给 `unsafeHTML`；保持 `marked` → DOMPurify → `unsafeHTML`。

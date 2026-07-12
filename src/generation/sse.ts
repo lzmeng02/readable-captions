@@ -1,9 +1,11 @@
+import { GenerationUserError } from "./errors";
+
 export type ChatStreamState = {
     pending: string;
     text: string;
     finishReason: string | null;
     sawDone: boolean;
-    errorMessage: string | null;
+    sawProviderError: boolean;
 };
 
 export type ChatStreamDelta = {
@@ -17,22 +19,17 @@ export function createChatStreamState(): ChatStreamState {
         text: "",
         finishReason: null,
         sawDone: false,
-        errorMessage: null,
+        sawProviderError: false,
     };
 }
 
-function getApiErrorMessage(value: unknown): string | null {
+function hasApiError(value: unknown): boolean {
     if (typeof value !== "object" || value === null) {
-        return null;
+        return false;
     }
 
-    const error = (value as Record<string, unknown>).error;
-    if (typeof error !== "object" || error === null) {
-        return null;
-    }
-
-    const message = (error as Record<string, unknown>).message;
-    return typeof message === "string" && message.length > 0 ? message : null;
+    const record = value as Record<string, unknown>;
+    return Object.hasOwn(record, "error") && record.error !== null && record.error !== undefined;
 }
 
 function getFirstChoice(value: unknown): Record<string, unknown> | null {
@@ -102,13 +99,12 @@ export function consumeChatSse(state: ChatStreamState, input: string): ChatStrea
         try {
             payload = JSON.parse(data);
         } catch {
-            throw new Error("Malformed SSE JSON from generation provider.");
+            throw new GenerationUserError("provider-response-invalid");
         }
 
-        const apiError = getApiErrorMessage(payload);
-        if (apiError) {
-            state.errorMessage = apiError;
-            throw new Error(apiError);
+        if (hasApiError(payload)) {
+            state.sawProviderError = true;
+            throw new GenerationUserError("provider-rejected");
         }
 
         const choice = getFirstChoice(payload);
@@ -134,17 +130,17 @@ export function consumeChatSse(state: ChatStreamState, input: string): ChatStrea
 }
 
 export function finalizeChatSse(state: ChatStreamState): string {
-    if (state.errorMessage) {
-        throw new Error(state.errorMessage);
+    if (state.sawProviderError) {
+        throw new GenerationUserError("provider-rejected");
     }
     if (!state.sawDone) {
-        throw new Error("Generation stream ended before [DONE].");
+        throw new GenerationUserError("provider-response-invalid");
     }
     if (state.finishReason !== "stop") {
-        throw new Error(`Generation stopped with finish_reason: ${state.finishReason ?? "missing"}.`);
+        throw new GenerationUserError("provider-response-invalid");
     }
     if (!state.text.trim()) {
-        throw new Error("Generation completed with empty output.");
+        throw new GenerationUserError("provider-response-invalid");
     }
     return state.text;
 }

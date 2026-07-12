@@ -1,7 +1,8 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
-import type { Mode } from "./panel-view";
+import type { Mode, PublicSettingsStatus } from "./panel-view";
 import { streamGeneration } from "../generation/llm-provider";
+import { getSafeGenerationErrorMessage } from "../generation/errors";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
 import { watchPublicSettings } from "../settings/public-client";
 import type { PublicExtensionSettings } from "../settings/types";
@@ -94,15 +95,18 @@ export function mountPanel(
     }
 
     let mode: Mode = "original";
-    let generationEnabled = true;
+    let settingsStatus: PublicSettingsStatus = "pending";
+    let settingsError: string | null = null;
+    let generationEnabled = false;
     let generationSettingsKey = "";
     let hasUserSelectedMode = false;
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
+    let isMenuOpen = false;
     let hasLoadedSettings = false;
-    let copyFormat: PublicExtensionSettings["copyFormat"] = "readable_text";
-    let downloadFormat: PublicExtensionSettings["downloadFormat"] = "txt";
+    let copyFormat: PublicExtensionSettings["copyFormat"] | null = null;
+    let downloadFormat: PublicExtensionSettings["downloadFormat"] | null = null;
     let subtitleRequestId = 0;
     let subtitleController: AbortController | null = null;
     let pendingSubtitleUrl: string | null = null;
@@ -146,7 +150,7 @@ export function mountPanel(
     };
 
     const generate = (task: GenerationTask): void => {
-        if (!generationEnabled || isDisposed) {
+        if (settingsStatus !== "ready" || !generationEnabled || isDisposed) {
             return;
         }
 
@@ -196,7 +200,7 @@ export function mountPanel(
                 if (!isCurrentRequest()) return;
                 state.requestVersion += 1;
                 state.text = null;
-                state.error = err.message || (uiLanguage === "zh" ? "生成内容时发生未知错误" : "Unknown error occurred during generation.");
+                state.error = getSafeGenerationErrorMessage(err);
                 state.isGenerating = false;
                 state.activeAbort = null;
                 if (isGenerationTaskVisible(task)) {
@@ -214,7 +218,8 @@ export function mountPanel(
 
     const maybeGenerateForMode = (): boolean => {
         if (
-            data.status !== "ready"
+            settingsStatus !== "ready"
+            || data.status !== "ready"
             || !isPanelGenerationMode(mode)
             || !generationEnabled
             || !data.transcript
@@ -233,7 +238,7 @@ export function mountPanel(
     };
 
     const handleRetryGeneration = (): void => {
-        if (!isPanelGenerationMode(mode)) {
+        if (settingsStatus !== "ready" || !isPanelGenerationMode(mode)) {
             return;
         }
 
@@ -242,6 +247,10 @@ export function mountPanel(
     };
 
     const handleOpenNote = (): void => {
+        if (settingsStatus !== "ready") {
+            return;
+        }
+
         isNoteOpen = true;
         const state = generationStates.note;
         if (generationEnabled && !state.text && !state.isGenerating && !state.error) {
@@ -252,6 +261,10 @@ export function mountPanel(
     };
 
     const handleRetryNote = (): void => {
+        if (settingsStatus !== "ready") {
+            return;
+        }
+
         isNoteOpen = true;
         clearGenerationState("note");
         generate("note");
@@ -263,18 +276,22 @@ export function mountPanel(
     };
 
     const handleCopyNote = async (): Promise<void> => {
+        if (settingsStatus !== "ready") return;
         const note = generationStates.note.text;
         if (!note) return;
         await copyMarkdownNote(note);
     };
 
     const handleDownloadNote = (): void => {
+        if (settingsStatus !== "ready") return;
         const note = generationStates.note.text;
         if (!note) return;
         downloadMarkdownNote(note, extractVideoTitle(document.title));
     };
 
     const handleCopy = async (): Promise<void> => {
+        if (settingsStatus !== "ready") return;
+
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
             if (!text) return;
@@ -282,11 +299,13 @@ export function mountPanel(
             return;
         }
 
-        if (!data.transcript || data.transcript.length === 0) return;
+        if (!copyFormat || !data.transcript || data.transcript.length === 0) return;
         await copyTranscript(data.transcript, copyFormat);
     };
 
     const handleDownload = (): void => {
+        if (settingsStatus !== "ready") return;
+
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
             if (!text) return;
@@ -294,7 +313,7 @@ export function mountPanel(
             return;
         }
 
-        if (!data.transcript || data.transcript.length === 0) return;
+        if (!downloadFormat || !data.transcript || data.transcript.length === 0) return;
         downloadTranscript(data.transcript, downloadFormat, extractVideoTitle(document.title));
     };
 
@@ -384,7 +403,15 @@ export function mountPanel(
             handleDownload,
             handleSubtitleLanguageChange,
             { pendingSubtitleUrl, subtitleError },
-            { generationEnabled },
+            {
+                generationEnabled,
+                settingsStatus,
+                settingsError,
+                isMenuOpen,
+                onMenuOpenChange: (nextIsMenuOpen) => {
+                    isMenuOpen = nextIsMenuOpen;
+                },
+            },
             {
                 isOpen: isNoteOpen,
                 isGenerating: noteGenerationState.isGenerating,
@@ -407,6 +434,14 @@ export function mountPanel(
     };
 
     const setMode = (nextMode: Mode, userSelected = false): void => {
+        if (
+            settingsStatus !== "ready"
+            && isPanelGenerationMode(nextMode)
+            && (userSelected || nextMode !== mode)
+        ) {
+            return;
+        }
+
         if (userSelected && nextMode !== mode) {
             hasUserSelectedMode = true;
         }
@@ -428,6 +463,8 @@ export function mountPanel(
         const generationSettingsChanged = hasLoadedSettings && generationSettingsKey !== nextGenerationSettingsKey;
         const nextDefaultMode = resolveInitialMode(settings.defaultTab);
 
+        settingsStatus = "ready";
+        settingsError = null;
         generationEnabled = settings.generationEnabled;
         generationSettingsKey = nextGenerationSettingsKey;
         copyFormat = settings.copyFormat;
@@ -458,6 +495,22 @@ export function mountPanel(
             return;
         }
 
+        renderPanel();
+    };
+
+    const handlePanelSettingsError = (error: Error): void => {
+        if (isDisposed) {
+            return;
+        }
+
+        settingsStatus = "error";
+        settingsError = error.message || "Extension settings are unavailable.";
+        generationEnabled = false;
+        generationSettingsKey = "";
+        copyFormat = null;
+        downloadFormat = null;
+        isNoteOpen = false;
+        clearAllGenerationStates();
         renderPanel();
     };
 
@@ -495,6 +548,7 @@ export function mountPanel(
             mode = "original";
             hasUserSelectedMode = false;
             isNoteOpen = false;
+            isMenuOpen = false;
             renderPanel();
         },
         dispose,
@@ -502,7 +556,7 @@ export function mountPanel(
 
     managedHost[cleanupKey] = dispose;
     document.addEventListener("pointerdown", handlePointerDown, true);
-    stopWatchingSettings = watchPublicSettings(applyPanelSettings);
+    stopWatchingSettings = watchPublicSettings(applyPanelSettings, handlePanelSettingsError);
 
     renderPanel();
     return handle;

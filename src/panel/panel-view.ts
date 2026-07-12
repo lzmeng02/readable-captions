@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 import type { PanelData, SubtitleSelectionUiState } from "./types";
 
 export type Mode = "overview" | "intensive" | "original";
+export type PublicSettingsStatus = "pending" | "ready" | "error";
 
 export type GenerationUiState = {
     isGenerating: boolean;
@@ -23,10 +24,13 @@ export type NoteUiState = GenerationUiState & {
 
 export type PanelUiOptions = {
     generationEnabled: boolean;
+    settingsStatus: PublicSettingsStatus;
+    settingsError: string | null;
+    isMenuOpen: boolean;
+    onMenuOpenChange: (isOpen: boolean) => void;
 };
 
 let isCollapsed = false;
-let isMenuOpen = false;
 
 export function panelTemplate(
     mode: Mode,
@@ -43,10 +47,18 @@ export function panelTemplate(
         pendingSubtitleUrl: null,
         subtitleError: null,
     },
-    uiOptions: PanelUiOptions = { generationEnabled: true },
+    uiOptions: PanelUiOptions = {
+        generationEnabled: false,
+        settingsStatus: "pending",
+        settingsError: null,
+        isMenuOpen: false,
+        onMenuOpenChange: () => undefined,
+    },
     noteState?: NoteUiState,
 ) {
     const generationEnabled = uiOptions.generationEnabled;
+    const settingsReady = uiOptions.settingsStatus === "ready";
+    const isMenuOpen = uiOptions.isMenuOpen;
 
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
@@ -55,19 +67,19 @@ export function panelTemplate(
 
     const toggleMenu = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = !isMenuOpen;
+        uiOptions.onMenuOpenChange(!isMenuOpen);
         setMode(mode);
     };
 
     const closeMenu = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = false;
+        uiOptions.onMenuOpenChange(false);
         setMode(mode);
     };
 
     const handleSettingsClick = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = false;
+        uiOptions.onMenuOpenChange(false);
         setMode(mode);
         onSettingsClick();
     };
@@ -79,7 +91,10 @@ export function panelTemplate(
 
     const handleNoteClick = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = false;
+        if (!settingsReady) {
+            return;
+        }
+        uiOptions.onMenuOpenChange(false);
         noteState?.onOpen();
     };
 
@@ -93,8 +108,13 @@ export function panelTemplate(
 
     const tab = (id: Mode, label: string) => {
         const active = mode === id;
+        const disabled = id !== "original" && !settingsReady;
         return html`
-            <button class="tab ${active ? "active" : ""}" @click=${() => setMode(id, true)}>
+            <button
+                class="tab ${active ? "active" : ""}"
+                ?disabled=${disabled}
+                @click=${() => setMode(id, true)}
+            >
                 ${label}
             </button>
         `;
@@ -256,7 +276,24 @@ export function panelTemplate(
         </div>
     `;
 
+    const renderUnavailableSettings = () => html`
+        <div class="empty-state">
+            <p>${uiOptions.settingsStatus === "error"
+                ? (currentLang === "zh" ? "扩展设置暂时不可用" : "Extension settings are unavailable.")
+                : (currentLang === "zh" ? "正在加载扩展设置…" : "Loading extension settings...")}</p>
+            ${uiOptions.settingsStatus === "error" ? html`
+                <button class="retry-btn" @click=${onSettingsClick}>
+                    ${currentLang === "zh" ? "打开设置" : "Open Settings"}
+                </button>
+            ` : nothing}
+        </div>
+    `;
+
     const renderGenerationView = (title: string, loadingText: string) => {
+        if (!settingsReady) {
+            return renderUnavailableSettings();
+        }
+
         if (data.status !== "ready") {
             return emptyState();
         }
@@ -347,6 +384,10 @@ export function panelTemplate(
         }
 
         const noteBody = () => {
+            if (!settingsReady) {
+                return renderUnavailableSettings();
+            }
+
             if (!generationEnabled) {
                 return renderDisabledGeneration();
             }
@@ -420,6 +461,27 @@ export function panelTemplate(
         }
     };
 
+    const renderSettingsStatus = () => {
+        if (uiOptions.settingsStatus === "pending") {
+            return html`
+                <div class="settings-status pending" role="status">
+                    ${currentLang === "zh" ? "正在加载扩展设置…" : "Loading extension settings..."}
+                </div>
+            `;
+        }
+
+        if (uiOptions.settingsStatus === "error") {
+            return html`
+                <div class="settings-status error" role="alert">
+                    ${uiOptions.settingsError
+                        || (currentLang === "zh" ? "扩展设置暂时不可用" : "Extension settings are unavailable.")}
+                </div>
+            `;
+        }
+
+        return nothing;
+    };
+
     return html`
         <div class="panel ${isCollapsed ? "collapsed" : ""}">
             <header class="header">
@@ -429,10 +491,10 @@ export function panelTemplate(
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => handleActionClick(event, onDownload)}>
+                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => handleActionClick(event, onDownload)}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => handleActionClick(event, onCopy)}>
+                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => handleActionClick(event, onCopy)}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
 
@@ -444,7 +506,7 @@ export function panelTemplate(
                         ${isMenuOpen ? html`
                             <div class="menu-overlay" @click=${closeMenu}></div>
                             <div class="overflow-menu">
-                                <button class="overflow-item" @click=${handleNoteClick}>
+                                <button class="overflow-item" ?disabled=${!settingsReady} @click=${handleNoteClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                                     <span class="overflow-item-label">${currentLang === "zh" ? "导出 Markdown Note" : "Export Markdown Note"}</span>
                                 </button>
@@ -461,6 +523,8 @@ export function panelTemplate(
                     </div>
                 </div>
             </header>
+
+            ${renderSettingsStatus()}
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
@@ -492,6 +556,11 @@ export const panelStyles = css`
         font-family: inherit;
     }
 
+    button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
     .panel {
         height: 540px;
         max-height: 85vh;
@@ -516,6 +585,23 @@ export const panelStyles = css`
         padding: 0 16px;
         height: 46px;
         flex-shrink: 0;
+    }
+
+    .settings-status {
+        flex-shrink: 0;
+        padding: 6px 16px;
+        border-top: 1px solid #f1f2f3;
+        border-bottom: 1px solid #f1f2f3;
+        background: #f6f7f8;
+        color: #61666d;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .settings-status.error {
+        border-color: #ffd7d7;
+        background: #fff3f3;
+        color: #d03030;
     }
 
     .title-area {

@@ -17,6 +17,16 @@ async function flushPromises(): Promise<void> {
     }
 }
 
+function deferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+}
+
 function createFakeChrome() {
     let connectListener: ((port: RuntimePort) => void) | undefined;
     const chrome: ExtensionChrome = {
@@ -108,7 +118,12 @@ describe("registerBackground", () => {
         expect(first.postedMessages[0]).not.toHaveProperty("settings.generationApiKey");
         expect(harness.keepAliveSignals).toEqual([]);
 
-        const updatedSettings = createSettings({ generationEnabled: false, generationApiKey: "new secret" });
+        const updatedSettings = createSettings({
+            generationEnabled: false,
+            generationProviderSettings: {
+                deepseek: { apiKey: "ds-test-key" },
+            },
+        });
         harness.emitSettings(updatedSettings);
 
         expect(first.postedMessages.at(-1)).toEqual({
@@ -142,6 +157,54 @@ describe("registerBackground", () => {
         expect(harness.keepAliveSignals).toEqual([]);
     });
 
+    it("does not overwrite a newer settings broadcast with a delayed initial read", async () => {
+        const initialRead = deferred<ExtensionSettings>();
+        const harness = createHarness({ getSettings: () => initialRead.promise });
+        const settingsPort = createFakeRuntimePort(PUBLIC_SETTINGS_PORT);
+        const newerSettings = createSettings({ defaultTab: "intensive" });
+
+        registerBackground(harness.dependencies);
+        harness.chrome.connect(settingsPort.port);
+        harness.emitSettings(newerSettings);
+        initialRead.resolve(createSettings({ defaultTab: "original" }));
+        await flushPromises();
+
+        expect(settingsPort.postedMessages).toEqual([
+            { type: "settings", settings: toPublicSettings(newerSettings) },
+        ]);
+    });
+
+    it("does not overwrite a newer settings broadcast with a delayed initial read error", async () => {
+        const initialRead = deferred<ExtensionSettings>();
+        const harness = createHarness({ getSettings: () => initialRead.promise });
+        const settingsPort = createFakeRuntimePort(PUBLIC_SETTINGS_PORT);
+        const newerSettings = createSettings({ defaultTab: "intensive" });
+
+        registerBackground(harness.dependencies);
+        harness.chrome.connect(settingsPort.port);
+        harness.emitSettings(newerSettings);
+        initialRead.reject(new Error("stale storage failure"));
+        await flushPromises();
+
+        expect(settingsPort.postedMessages).toEqual([
+            { type: "settings", settings: toPublicSettings(newerSettings) },
+        ]);
+    });
+
+    it("does not post a delayed initial result after the settings port disconnects", async () => {
+        const initialRead = deferred<ExtensionSettings>();
+        const harness = createHarness({ getSettings: () => initialRead.promise });
+        const settingsPort = createFakeRuntimePort(PUBLIC_SETTINGS_PORT);
+
+        registerBackground(harness.dependencies);
+        harness.chrome.connect(settingsPort.port);
+        settingsPort.emitDisconnect();
+        initialRead.resolve(createSettings());
+        await flushPromises();
+
+        expect(settingsPort.postedMessages).toEqual([]);
+    });
+
     it("ignores unknown port names and wires only the generation port", async () => {
         const harness = createHarness();
         const unknown = createFakeRuntimePort("unknown-port");
@@ -162,7 +225,7 @@ describe("registerBackground", () => {
         await flushPromises();
 
         expect(generation.postedMessages).toEqual([
-            { type: "error", message: "Invalid generation request." },
+            { type: "error", code: "invalid-request" },
             { type: "done", text: "complete" },
         ]);
         expect(harness.streamGenerationFromApi).toHaveBeenCalledOnce();

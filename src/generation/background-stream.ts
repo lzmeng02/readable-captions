@@ -1,4 +1,5 @@
 import type { getSettings } from "../settings/storage";
+import { GenerationUserError, toGenerationErrorCode } from "./errors";
 import {
     isGenerationCancelMessage,
     isGenerationStartMessage,
@@ -37,10 +38,6 @@ function postToPort(port: RuntimePort, message: GenerationStreamBackgroundMessag
     }
 }
 
-function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
-}
-
 async function runGenerationStream(
     port: RuntimePort,
     request: GenerationRequest,
@@ -48,19 +45,23 @@ async function runGenerationStream(
     deps: GenerationPortDependencies,
 ): Promise<void> {
     try {
-        const fullText = await deps.keepAlive(async () => {
-            const settings = await deps.getSettings();
-            return deps.streamGenerationFromApi({
-                settings,
-                request,
-                signal: controller.signal,
-                onToken: (deltaText) => {
-                    if (!controller.signal.aborted) {
-                        postToPort(port, { type: "token", text: deltaText });
-                    }
-                },
-            });
-        }, controller.signal);
+        const settings = await deps.getSettings().catch(() => {
+            throw new GenerationUserError("settings-unavailable");
+        });
+        if (!settings.generationEnabled) {
+            throw new GenerationUserError("generation-disabled");
+        }
+
+        const fullText = await deps.keepAlive(() => deps.streamGenerationFromApi({
+            settings,
+            request,
+            signal: controller.signal,
+            onToken: (deltaText) => {
+                if (!controller.signal.aborted) {
+                    postToPort(port, { type: "token", text: deltaText });
+                }
+            },
+        }), controller.signal);
 
         if (!controller.signal.aborted) {
             postToPort(port, { type: "done", text: fullText });
@@ -72,7 +73,7 @@ async function runGenerationStream(
 
         postToPort(port, {
             type: "error",
-            message: toError(errorValue).message,
+            code: toGenerationErrorCode(errorValue),
         });
     }
 }
@@ -91,7 +92,7 @@ export function attachGenerationStreamPort(
         }
 
         if (!isGenerationStartMessage(message)) {
-            postToPort(port, { type: "error", message: "Invalid generation request." });
+            postToPort(port, { type: "error", code: "invalid-request" });
             return;
         }
 

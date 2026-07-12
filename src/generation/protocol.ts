@@ -1,4 +1,5 @@
 import type { GenerationRequest, GenerationTask } from "./types";
+import { isGenerationErrorCode, type GenerationErrorCode } from "./errors";
 
 export const GENERATION_STREAM_PORT = "readable-captions-generation-stream";
 
@@ -23,7 +24,7 @@ export type GenerationStreamBackgroundMessage =
     }
     | {
         type: "error";
-        message: string;
+        code: GenerationErrorCode;
     };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,7 +61,7 @@ export function isGenerationBackgroundMessage(message: unknown): message is Gene
     }
 
     if (message.type === "error") {
-        return typeof message.message === "string";
+        return isGenerationErrorCode(message.code);
     }
 
     return false;
