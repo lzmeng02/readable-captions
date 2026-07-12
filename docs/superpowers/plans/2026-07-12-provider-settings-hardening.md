@@ -729,6 +729,8 @@ Expected: all tests pass, TypeScript exits 0, all five build artifacts are produ
 
 - [ ] **Step 3: Execute the Chrome smoke matrix**
 
+Status: unverified in this session because no controllable Chrome extension session or authorized OpenAI/DeepSeek test credentials were available. Automated DOM/unit coverage is recorded separately and is not treated as Chrome smoke.
+
 Verify and record:
 
 - DeepSeek key/model survive DeepSeek → OpenAI → DeepSeek switching.
@@ -742,11 +744,11 @@ Verify and record:
 
 If authenticated external-provider smoke cannot run, report those rows as unverified rather than claiming success.
 
-- [ ] **Step 4: Request Superpowers code review and address findings**
+- [x] **Step 4: Request Superpowers code review and address findings**
 
 Use `superpowers:requesting-code-review` against base `0905849` and the final HEAD. Fix every Critical/Important issue with a new RED→GREEN cycle; record Minor issues explicitly.
 
-- [ ] **Step 5: Commit docs/review fixes and update the Draft PR**
+- [x] **Step 5: Commit docs/review fixes and update the Draft PR**
 
 ```powershell
 git add -- docs AGENTS.md src tests
