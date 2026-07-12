@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
 import type { ExtensionSettings } from "../../../src/settings/types";
 
 const storageMocks = vi.hoisted(() => ({
+    createSettingsWriteRevision: vi.fn(),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
     watchSettings: vi.fn(),
@@ -11,9 +12,12 @@ const storageMocks = vi.hoisted(() => ({
 vi.mock("../../../src/settings/storage", () => storageMocks);
 import { ReadableCaptionsOptionsApp } from "../../../src/options/index";
 
-type SettingsWatcher = (settings: ExtensionSettings) => void;
+type SettingsWatcherMetadata = { revision: string | null };
+type SettingsWatcher = (settings: ExtensionSettings, metadata?: SettingsWatcherMetadata) => void;
 
 let watchedSettings: SettingsWatcher | undefined;
+let externalRevisionSequence = 0;
+let writeRevisionSequence = 0;
 const stopWatching = vi.fn();
 
 function deferred<T>() {
@@ -76,16 +80,28 @@ function defaultTabValue(app: ReadableCaptionsOptionsApp): string {
     return app.shadowRoot?.querySelector<HTMLSelectElement>('select[name="defaultTab"]')?.value ?? "";
 }
 
-async function emitExternal(app: ReadableCaptionsOptionsApp, settings: ExtensionSettings): Promise<void> {
+async function emitExternal(
+    app: ReadableCaptionsOptionsApp,
+    settings: ExtensionSettings,
+    revision = `external-revision-${++externalRevisionSequence}`,
+): Promise<void> {
     expect.soft(watchedSettings, "watchSettings subscription").toBeTypeOf("function");
-    watchedSettings?.(settings);
+    watchedSettings?.(settings, { revision });
     await settle(app);
+}
+
+function writeRevision(index = 0): string {
+    return `options-write-revision-${index + 1}`;
 }
 
 beforeEach(() => {
     document.body.replaceChildren();
     watchedSettings = undefined;
+    externalRevisionSequence = 0;
+    writeRevisionSequence = 0;
     stopWatching.mockReset();
+    storageMocks.createSettingsWriteRevision.mockReset()
+        .mockImplementation(() => `options-write-revision-${++writeRevisionSequence}`);
     storageMocks.getSettings.mockReset();
     storageMocks.saveSettings.mockReset().mockImplementation(async (settings) => settings);
     storageMocks.watchSettings.mockReset().mockImplementation((listener: SettingsWatcher) => {
@@ -123,7 +139,7 @@ describe("Options settings lifecycle", () => {
         const app = await mountInitialOptions();
 
         expect(watchedSettings, "watchSettings subscription before read completion").toBeTypeOf("function");
-        watchedSettings!(externalWrite);
+        watchedSettings!(externalWrite, { revision: "initial-external-revision" });
         pending.resolve(staleRead);
         await settle(app);
 
@@ -249,7 +265,7 @@ describe("Options settings lifecycle", () => {
         await settle(app);
         expect(storageMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
             defaultTab: "overview",
-        }));
+        }), writeRevision());
     });
 
     it("treats an edit reverted to the baseline as clean", async () => {
@@ -273,7 +289,7 @@ describe("Options settings lifecycle", () => {
         const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
         expect(snapshot).toBeDefined();
 
-        await emitExternal(app, snapshot);
+        await emitExternal(app, snapshot, writeRevision());
         pending.resolve(snapshot);
         await settle(app);
 
@@ -290,7 +306,7 @@ describe("Options settings lifecycle", () => {
         expect(snapshot).toBeDefined();
 
         await changeDefaultTab(app, "intensive");
-        await emitExternal(app, snapshot);
+        await emitExternal(app, snapshot, writeRevision());
 
         expect.soft(defaultTabValue(app)).toBe("intensive");
         expect.soft(findButton(app, "载入外部设置")).toBeUndefined();
@@ -311,12 +327,31 @@ describe("Options settings lifecycle", () => {
         await emitExternal(app, newerExternal);
         pending.resolve(snapshot);
         await settle(app);
-        await emitExternal(app, snapshot);
+        await emitExternal(app, snapshot, writeRevision());
 
         expect(findButton(app, "载入外部设置"), "newer external conflict").toBeDefined();
         findButton(app, "载入外部设置")?.click();
         await settle(app);
         expect(defaultTabValue(app)).toBe("intensive");
+    });
+
+    it("applies a genuine external X after save X had no watcher acknowledgement and storage changed X to Z", async () => {
+        const app = await mountLoadedOptions();
+        await changeDefaultTab(app, "overview");
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const savedX = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
+        expect(savedX).toBeDefined();
+
+        await emitExternal(
+            app,
+            canonicalFixture({ defaultTab: "intensive" }),
+            "external-revision-z",
+        );
+        await emitExternal(app, savedX, "external-revision-x-after-z");
+
+        expect(defaultTabValue(app)).toBe("overview");
+        expect(findButton(app, "载入外部设置")).toBeUndefined();
     });
 
     it("forgets unobserved own-save acknowledgements across reconnect", async () => {
@@ -347,7 +382,7 @@ describe("Options settings lifecycle", () => {
         const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
         expect(snapshot).toBeDefined();
 
-        await emitExternal(app, snapshot);
+        await emitExternal(app, snapshot, writeRevision());
         await emitExternal(app, canonicalFixture({ defaultTab: "intensive" }));
         pending.resolve(snapshot);
         await settle(app);
@@ -367,7 +402,7 @@ describe("Options settings lifecycle", () => {
         const snapshot = storageMocks.saveSettings.mock.calls[0]?.[0] as ExtensionSettings;
         expect(snapshot).toBeDefined();
 
-        await emitExternal(app, snapshot);
+        await emitExternal(app, snapshot, writeRevision());
         await emitExternal(app, canonicalFixture({ defaultTab: "intensive" }));
         pending.resolve(snapshot);
         await settle(app);

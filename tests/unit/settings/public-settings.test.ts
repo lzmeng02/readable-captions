@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, mergeSettings } from "../../../src/settings/defaults";
+import type { ExtensionSettings } from "../../../src/settings/types";
 import {
     DEFAULT_PUBLIC_SETTINGS,
     isPublicSettingsPortMessage,
@@ -29,6 +30,20 @@ it("derives public defaults from canonical defaults", () => {
 
 it("never exposes provider profiles or credentials", () => {
     expect(toPublicSettings(DEFAULT_SETTINGS)).not.toHaveProperty("generationProviderSettings");
+});
+
+it("ignores private storage revision metadata in the public projection and cache identity", () => {
+    const withStorageMetadata = {
+        ...DEFAULT_SETTINGS,
+        storageVersion: 1,
+        revision: "public-trap-revision-001",
+    } as ExtensionSettings & { storageVersion: number; revision: string };
+
+    const projected = toPublicSettings(withStorageMetadata);
+
+    expect(projected).toEqual(toPublicSettings(DEFAULT_SETTINGS));
+    expect(projected).not.toHaveProperty("revision");
+    expect(projected).not.toHaveProperty("storageVersion");
 });
 
 it("rejects invalid public enum values", () => {

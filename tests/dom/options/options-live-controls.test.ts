@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
 
 const storageMocks = vi.hoisted(() => ({
+    createSettingsWriteRevision: vi.fn(),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
     watchSettings: vi.fn(),
@@ -39,6 +40,7 @@ function clickByText(root: ShadowRoot, text: string): void {
 
 beforeEach(() => {
     document.body.replaceChildren();
+    storageMocks.createSettingsWriteRevision.mockReset().mockReturnValue("live-controls-write-revision-001");
     storageMocks.getSettings.mockReset().mockResolvedValue({
         ...DEFAULT_SETTINGS,
         defaultTab: "intensive",
@@ -106,6 +108,6 @@ describe("Options live controls", () => {
             generationEnabled: true,
             copyFormat: "readable_text",
             downloadFormat: "txt",
-        }));
+        }), "live-controls-write-revision-001");
     });
 });

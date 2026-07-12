@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
 import type { ExtensionSettings } from "../../../src/settings/types";
 
 const storageMocks = vi.hoisted(() => ({
+    createSettingsWriteRevision: vi.fn(),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
     watchSettings: vi.fn(),
@@ -107,6 +108,7 @@ function findButton(app: ReadableCaptionsOptionsApp, text: string): HTMLButtonEl
 
 beforeEach(() => {
     document.body.replaceChildren();
+    storageMocks.createSettingsWriteRevision.mockReset().mockReturnValue("profiles-write-revision-001");
     storageMocks.getSettings.mockReset();
     storageMocks.saveSettings.mockReset().mockImplementation(async (settings) => settings);
     storageMocks.watchSettings.mockReset().mockReturnValue(vi.fn());

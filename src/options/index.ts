@@ -3,13 +3,19 @@ import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { GENERATION_PROVIDERS, getGenerationProvider } from "../generation/provider-catalog";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
-import { getSettings, saveSettings, watchSettings } from "../settings/storage";
+import {
+    createSettingsWriteRevision,
+    getSettings,
+    saveSettings,
+    watchSettings,
+    type SettingsWatchMetadata,
+} from "../settings/storage";
 import type { ExtensionSettings, GenerationModels, GenerationProvider } from "../settings/types";
 
 type TabId = "general" | "generation" | "export" | "about";
 type OptionsPhase = "loading" | "ready" | "saving" | "error";
 type ExternalConflict = { settings: ExtensionSettings; sequence: number };
-type PendingSave = { snapshotKey: string; ownWatchSequence: number | null };
+type PendingSave = { revision: string; ownWatchSequence: number | null };
 const MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS = 8;
 
 @customElement("rc-options-app")
@@ -543,7 +549,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
     @state() private showApiKey = false;
     private baseline: ExtensionSettings | null = null;
     private pendingSave: PendingSave | null = null;
-    private readonly retainedSaveAcknowledgementKeys = new Set<string>();
+    private readonly retainedSaveAcknowledgementRevisions = new Set<string>();
     private unwatchSettings: (() => void) | null = null;
     private operationVersion = 0;
     private watchSequence = 0;
@@ -558,7 +564,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.operationVersion += 1;
         this.stopWatchingSettings();
         this.pendingSave = null;
-        this.retainedSaveAcknowledgementKeys.clear();
+        this.retainedSaveAcknowledgementRevisions.clear();
         this.clearStatusTimer();
         super.disconnectedCallback();
     }
@@ -599,18 +605,18 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.baseline = null;
         this.conflict = null;
         this.pendingSave = null;
-        this.retainedSaveAcknowledgementKeys.clear();
+        this.retainedSaveAcknowledgementRevisions.clear();
         this.loadError = "";
 
         try {
             let latestSettingsDuringRead: ExtensionSettings | null = null;
-            this.unwatchSettings = watchSettings((nextSettings) => {
+            this.unwatchSettings = watchSettings((nextSettings, metadata) => {
                 if (operation !== this.operationVersion || !this.isConnected) return;
                 if (this.phase === "loading") {
                     latestSettingsDuringRead = mergeSettings(nextSettings);
                     return;
                 }
-                this.handleExternalSettings(nextSettings);
+                this.handleExternalSettings(nextSettings, metadata);
             });
 
             const settings = await getSettings();
@@ -630,17 +636,20 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
     }
 
-    private handleExternalSettings(settings: ExtensionSettings): void {
+    private handleExternalSettings(
+        settings: ExtensionSettings,
+        metadata: SettingsWatchMetadata,
+    ): void {
         const sequence = ++this.watchSequence;
         const nextSettings = mergeSettings(settings);
-        const nextSettingsKey = this.canonicalKey(nextSettings);
+        const revision = metadata.revision;
         const pendingSave = this.pendingSave;
-        if (pendingSave && nextSettingsKey === pendingSave.snapshotKey) {
-            this.retainedSaveAcknowledgementKeys.delete(nextSettingsKey);
+        if (revision !== null && pendingSave && revision === pendingSave.revision) {
+            this.retainedSaveAcknowledgementRevisions.delete(revision);
             pendingSave.ownWatchSequence = sequence;
             return;
         }
-        if (this.retainedSaveAcknowledgementKeys.delete(nextSettingsKey)) return;
+        if (revision !== null && this.retainedSaveAcknowledgementRevisions.delete(revision)) return;
         if (!this.draft || !this.baseline) return;
 
         if (this.conflict || this.phase === "saving" || (this.phase === "ready" && this.isDirty)) {
@@ -801,8 +810,9 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
         const operation = this.operationVersion;
         const snapshot = this.draft;
+        const revision = createSettingsWriteRevision();
         const pendingSave: PendingSave = {
-            snapshotKey: this.canonicalKey(snapshot),
+            revision,
             ownWatchSequence: null,
         };
         this.pendingSave = pendingSave;
@@ -810,7 +820,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         this.clearStatus();
 
         try {
-            const savedSettings = await saveSettings(snapshot);
+            const savedSettings = await saveSettings(snapshot, revision);
             if (operation !== this.operationVersion || !this.isConnected) return;
 
             this.baseline = savedSettings;
@@ -821,11 +831,13 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                 this.conflict = null;
             }
             if (ownWatchSequence === null) {
-                if (this.retainedSaveAcknowledgementKeys.size >= MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS) {
-                    const oldestKey = this.retainedSaveAcknowledgementKeys.values().next().value;
-                    if (oldestKey !== undefined) this.retainedSaveAcknowledgementKeys.delete(oldestKey);
+                if (this.retainedSaveAcknowledgementRevisions.size >= MAX_RETAINED_SAVE_ACKNOWLEDGEMENTS) {
+                    const oldestRevision = this.retainedSaveAcknowledgementRevisions.values().next().value;
+                    if (oldestRevision !== undefined) {
+                        this.retainedSaveAcknowledgementRevisions.delete(oldestRevision);
+                    }
                 }
-                this.retainedSaveAcknowledgementKeys.add(pendingSave.snapshotKey);
+                this.retainedSaveAcknowledgementRevisions.add(pendingSave.revision);
             }
             this.pendingSave = null;
             this.phase = "ready";
