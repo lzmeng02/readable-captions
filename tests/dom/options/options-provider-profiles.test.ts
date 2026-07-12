@@ -144,6 +144,24 @@ describe("Options provider profiles", () => {
         expect.soft(valueOf(app, 'input[name="generationApiKey"]')).toBe("oa-test-key");
         expect.soft(valueOf(app, 'input[data-task="overview"]')).toBe("gpt-overview");
         expect.soft(valueOf(app, 'input[data-task="intensive"]')).toBe("gpt-intensive");
+
+        findButton(app, "保存设置")?.click();
+        await settle(app);
+        const saved = storageMocks.saveSettings.mock.calls[0]?.[0];
+        expect.soft(saved).toBeDefined();
+        expect.soft((saved as any)?.generationProviderSettings).toEqual({
+            openai: {
+                apiKey: "oa-test-key",
+                models: { overview: "gpt-overview", intensive: "gpt-intensive" },
+            },
+            deepseek: {
+                apiKey: "ds-test-key",
+                models: { overview: "deepseek-overview", intensive: "deepseek-intensive" },
+            },
+        });
+        expect.soft(saved).not.toHaveProperty("generationApiKey");
+        expect.soft(saved).not.toHaveProperty("generationModels");
+        expect(saved).not.toHaveProperty("generationAccessMode");
     });
 
     it("treats a whitespace-only selected key as unconfigured", async () => {

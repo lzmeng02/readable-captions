@@ -131,7 +131,21 @@ describe("Options settings lifecycle", () => {
         const retryButton = findButton(app, "重试");
         expect(retryButton, "retry action").toBeDefined();
         retryButton!.click();
+        await settle(app);
         expect(storageMocks.getSettings).toHaveBeenCalledTimes(2);
+
+        const retryRoot = app.shadowRoot!;
+        expect.soft(retryRoot.querySelector('[role="status"]')?.textContent ?? "").toContain("加载");
+        const fieldset = retryRoot.querySelector<HTMLFieldSetElement>("fieldset");
+        const editableFormControl = retryRoot.querySelector("input, select, textarea");
+        expect.soft(fieldset ? fieldset.disabled : editableFormControl === null).toBe(true);
+        const save = retryRoot.querySelector<HTMLButtonElement>(".btn-primary");
+        const reset = retryRoot.querySelector<HTMLButtonElement>(".btn-ghost");
+        expect.soft(save === null || save.disabled).toBe(true);
+        expect.soft(reset === null || reset.disabled).toBe(true);
+        save?.click();
+        await settle(app);
+        expect(storageMocks.saveSettings).not.toHaveBeenCalled();
 
         retry.resolve(canonicalFixture({ defaultTab: "intensive" }));
         await settle(app);

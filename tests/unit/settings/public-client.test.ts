@@ -21,17 +21,21 @@ describe("watchPublicSettings", () => {
     it("reports a background settings read failure", () => {
         const fake = createFakeRuntimePort(PUBLIC_SETTINGS_PORT);
         vi.stubGlobal("chrome", { runtime: { connect: vi.fn(() => fake.port) } });
-        vi.spyOn(console, "error").mockImplementation(() => undefined);
+        const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
         const onSettings = vi.fn();
         const onError = vi.fn();
 
-        watchPublicSettings(onSettings, onError);
-        fake.emitMessage({ type: "error", message: "settings unavailable" });
+        try {
+            watchPublicSettings(onSettings, onError);
+            fake.emitMessage({ type: "error", message: "settings unavailable" });
 
-        expect(onSettings).not.toHaveBeenCalled();
-        expect(onError).toHaveBeenCalledWith(expect.objectContaining({
-            message: "settings unavailable",
-        }));
+            expect(onSettings).not.toHaveBeenCalled();
+            expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+                message: "settings unavailable",
+            }));
+        } finally {
+            consoleError.mockRestore();
+        }
     });
 
     it("publishes valid settings messages", () => {
