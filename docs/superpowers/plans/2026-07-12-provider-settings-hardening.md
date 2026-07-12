@@ -13,6 +13,7 @@
 - Add the complete regression suite and observe the focused RED failures before modifying any production file.
 - Never copy a legacy API key/model into more than the selected legacy provider profile.
 - Never expose an API key or a key-derived value through public settings, runtime ports, page/Panel DOM, logs, generated output, docs examples, or committed fixtures.
+- Keep the private storage envelope revision outside `ExtensionSettings`, public settings, cache identity, runtime messages, and UI; correlate Options save acknowledgements by revision only.
 - Resolve catalog default models at request time; keep normalized stored model values empty when the user did not configure one.
 - Remove `generationAccessMode`; do not implement or advertise `webapp` authentication.
 - Preserve strict SSE completion, raw-delta transport, request-scoped keepalive, cancellation, and Markdown sanitization.
@@ -157,7 +158,7 @@ it("save writes only canonical provider profiles", async () => {
 });
 ```
 
-In the same file, add independent tests for missing storage, missing key, `runtime.lastError`, local-area/key filtering, normalization of watcher values, and disposer removal. Capture the real watcher passed to `addListener`, emit both irrelevant and relevant changes, and assert only the relevant canonical value reaches the listener.
+In the same file, add independent tests for missing storage, missing key, `runtime.lastError`, legacy raw-object compatibility, versioned-envelope round trips, same-value saves with distinct revisions, local-area/key filtering, normalization of watcher values, separate watcher provenance metadata, and disposer removal. Capture the real watcher passed to `addListener`, emit both irrelevant and relevant changes, and assert only canonical settings plus `{ revision | null }` reach the listener.
 
 Extend `tests/unit/settings/public-settings.test.ts` with:
 
@@ -451,6 +452,8 @@ const providerSettings = hasProviderSettings
     : migrateLegacyProviderSettings(raw, provider);
 ```
 
+Keep the existing `extensionSettings` key backward compatible: reads/watchers unwrap both legacy raw objects and the private `{ storageVersion: 1, revision, settings }` envelope. `getSettings()` returns only canonical `ExtensionSettings`; `watchSettings()` surfaces `{ revision | null }` separately. Options generates the revision before every save so same-value writes remain distinguishable.
+
 - [x] **Step 3: Derive and validate public settings**
 
 Update `public.ts` so the cache payload reads only the selected profile models and shared prompts, then reduce that secret-free payload to a deterministic 64-bit FNV-1a digest encoded as fixed 13-character base36. Validate `defaultTab`, copy, and download values against their exported arrays. Define `DEFAULT_PUBLIC_SETTINGS` after projection helpers as:
@@ -519,7 +522,7 @@ Use these fields and method boundaries:
 ```ts
 type OptionsPhase = "loading" | "ready" | "saving" | "error";
 type ExternalConflict = { settings: ExtensionSettings; sequence: number };
-type PendingSave = { snapshotKey: string; ownWatchSequence: number | null };
+type PendingSave = { revision: string; ownWatchSequence: number | null };
 
 @state() private phase: OptionsPhase = "loading";
 @state() private draft: ExtensionSettings | null = null;
@@ -538,11 +541,11 @@ Canonical equality is `JSON.stringify(mergeSettings(value))`. Derive dirty statu
 
 Start with `draft = null`. Subscribe before starting the initial read; while the read is pending, buffer the latest watcher value and reconcile it ahead of the older read result before setting draft/baseline and entering ready. On failure enter error and render retry without editable defaults. Increment `operationVersion` on each load and disconnect so stale promises cannot commit. Reload/disconnect invokes watcher cleanup, resets retained acknowledgement identities, and clears the status timer.
 
-Every edit handler must check `phase === "ready"`; unresolved conflict also blocks submit. During save, disable the complete fieldset plus save/reset, retain a canonical snapshot key, and use the save return value as the new baseline.
+Every edit handler must check `phase === "ready"`; unresolved conflict also blocks submit. During save, disable the complete fieldset plus save/reset, create the unique write revision before calling `saveSettings(snapshot, revision)`, retain that revision for acknowledgement correlation, and use the save return value as the new baseline.
 
 - [x] **Step 3: Implement watcher ordering and conflict resolution**
 
-Increment `watchSequence` for every watcher event. An incoming canonical key equal to the pending save snapshot is the component's own acknowledgement, not a conflict. If save resolves before that watcher event, retain the unobserved snapshot identity in a bounded set until consumed; consuming it must not clear or replace an already-held newer external conflict. A different incoming value replaces a clean draft, but becomes the latest conflict for a dirty/saving draft. Preserve external events newer than the own-save acknowledgement when save resolves.
+Increment `watchSequence` for every watcher event. Only a watcher revision equal to the pending write revision is the component's own acknowledgement; canonical value equality is never provenance. If save resolves before that watcher event, retain the unobserved revision in a bounded set until consumed; consuming it must not clear or replace an already-held newer external conflict. A different/null revision is external even when its settings equal an older save, so X/no-ack → Z → genuine X is processed. A different incoming value replaces a clean draft, but becomes the latest conflict for a dirty/saving draft. Preserve external events newer than the own-save acknowledgement when save resolves, and reset retained revisions on reload/disconnect.
 
 Implement exact resolution semantics:
 
@@ -633,7 +636,7 @@ Extend `PanelUiOptions` with status/error. Disable header copy/download, generat
 ```powershell
 npm test -- tests/unit/settings/public-client.test.ts tests/dom/panel/mount-settings-readiness.test.ts tests/dom/panel/mount.test.ts tests/dom/panel/mount-generation-render.test.ts
 npm exec tsc -- --noEmit --pretty false
-git add -- src/settings/public-client.ts src/panel tests/unit/settings/public-client.test.ts tests/dom/panel
+git add -- src/background-app.ts src/settings/public-client.ts src/panel tests/unit/background/background-app.test.ts tests/unit/settings/public-client.test.ts tests/dom/panel
 git commit -m "fix: gate panel actions on loaded settings"
 ```
 
@@ -691,7 +694,7 @@ Expected: disabled test passes; keepalive, cancel, replacement, disconnect, stri
 - [x] **Step 3: Commit the defense-in-depth gate**
 
 ```powershell
-git add -- src/generation/background-stream.ts tests/unit/background
+git add -- src/generation/errors.ts src/generation/background-stream.ts src/generation/llm-api.ts src/generation/llm-provider.ts src/generation/protocol.ts src/generation/provider-catalog.ts src/generation/sse.ts src/panel/mount.ts tests/unit/background tests/unit/generation tests/dom/panel/mount.test.ts
 git commit -m "fix: enforce generation setting in background"
 ```
 

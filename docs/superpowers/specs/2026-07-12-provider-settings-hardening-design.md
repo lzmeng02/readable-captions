@@ -132,7 +132,7 @@ Legacy migration sources include:
 
 API keys and model identifiers are trimmed during normalization. Whitespace-only values become empty strings. Prompt template content is preserved as entered; the generation path may continue to trim only its outer boundary when composing a request.
 
-`saveSettings()` stores only the canonical schema. Normalized reads do not silently rewrite storage until the user saves or another explicit migration write is introduced.
+`saveSettings()` stores the canonical settings payload inside a private versioned envelope `{ storageVersion, revision, settings }`. `getSettings()` unwraps both that envelope and pre-existing raw settings objects into a plain `ExtensionSettings`; `watchSettings()` publishes the same canonical object plus separate `{ revision | null }` provenance. Storage metadata never enters `ExtensionSettings`, public settings, generation cache input, runtime messages, or UI. Normalized reads do not silently rewrite storage until the user saves or another explicit migration write is introduced.
 
 ## 4. Options State and Provider Editing
 
@@ -154,7 +154,7 @@ Options subscribes to `watchSettings()` before starting the initial storage read
 - if the form is clean, an external settings update replaces the displayed settings;
 - if local edits exist, the external update is held as a conflict and save is blocked;
 - the user may explicitly load the external version and discard local edits, or keep the local version and acknowledge that the next save will overwrite storage.
-- an own-save snapshot remains in a bounded acknowledgement set until its watcher event is consumed; a delayed acknowledgement is ignored without clearing or replacing a newer external conflict, and retained identities reset on reload/disconnect.
+- each Options save creates a unique write revision before calling storage. Pending/delayed own acknowledgements correlate by revision only, retained revisions are bounded and reset on reload/disconnect, and a genuine future same-value write has different provenance and is never swallowed.
 
 This makes cross-tab overwrites an explicit user decision instead of a silent race.
 
@@ -224,10 +224,10 @@ All regression tests are added before any production file changes. The focused R
 ### Storage tests
 
 - Missing storage or a missing settings key returns canonical defaults.
-- Stored current and legacy values pass through the same normalization contract.
-- Save writes only the canonical provider-profile schema.
+- Versioned storage envelopes and legacy raw objects pass through the same normalization contract without exposing revision metadata.
+- Save writes canonical provider profiles inside a unique-revision envelope; same-value writes still have distinct provenance.
 - Storage errors reject without substituting editable defaults.
-- Watch filters by area/key, normalizes new values, and unsubscribes cleanly.
+- Watch filters by area/key, normalizes new values, surfaces envelope revision separately (or `null` for legacy raw changes), and unsubscribes cleanly.
 
 ### Options DOM tests
 

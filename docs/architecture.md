@@ -125,7 +125,7 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 
 ## Panel 状态与渲染
 
-`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含 Lit template/CSS，但当前也持有少量 module-level UI 状态、直接执行时间戳跳转，并负责 Markdown 解析与净化；它不是纯视图函数：
+`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含 Lit template/CSS，但当前仍持有 module-level collapse 状态、直接执行时间戳跳转，并负责 Markdown 解析与净化；它不是纯视图函数：
 
 - 三个 view 为 `original`、`intensive`、`overview`，默认值来自 settings，仓库默认是 `original`。
 - `overview` 和 `intensive` 在首次进入对应 tab 时懒生成；已有文本、进行中或错误态都不会自动重复请求。
@@ -133,7 +133,7 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 - 原文和生成 Markdown 中可识别的时间戳会设置页面 `<video>.currentTime` 并尝试播放。
 - 生成 Markdown 先经 `marked` 转换，再由 DOMPurify 清洗，最后才传给 Lit 的 `unsafeHTML`。
 - 原文可复制为纯文本或带时间戳文本，可下载 TXT 或 SRT；Note 可复制或下载 `.md`。
-- `isCollapsed`、`isMenuOpen` 是 `panel-view.ts` 的 module-level 状态；`mode`、`uiLanguage`、生成状态和 Note drawer 状态属于每次 `mountPanel()` 实例。
+- 只有 `isCollapsed` 是 `panel-view.ts` 的 module-level 状态；`isMenuOpen`、`mode`、`uiLanguage`、生成状态和 Note drawer 状态都属于每次 `mountPanel()` 实例，reset 会关闭该实例的 More menu。
 - 流式 token 只为当前可见 task 调度 `requestAnimationFrame`；同一 frame 内的多个 token 合并成一次 Lit render。完成/错误立即 flush，tab 切换、reset、dispose 和其他同步 render 会取消旧 frame，隐藏 task 不因 token 重绘。
 - 标题提取只删除文档标题末尾的 `_哔哩哔哩_bilibili` 或 ` - 哔哩哔哩` suffix；`GPT-5`、`A-B-C` 等合法内部连字符保留。下载时仅用 `/[\\/:*?"<>|]/g` 把非法文件名字符替换为 `_`，生成文件再追加 `_overview`、`_intensive` 或 `_note`。
 
@@ -197,11 +197,11 @@ SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` �
 
 ## Settings 与迁移
 
-唯一 storage key 是 `extensionSettings`。业务代码通过以下封装访问：
+唯一 storage key 是 `extensionSettings`。新写入使用 private `{ storageVersion: 1, revision, settings }` envelope；旧版本留下的 raw settings object 仍可直接读取/监听。envelope 只提供写入 provenance，解包后不会进入 canonical/public settings。业务代码通过以下封装访问：
 
-- `getSettings()`：background/options 读取并经 `mergeSettings()` 规范化。
-- `saveSettings()`：options 规范化后保存。
-- `watchSettings()`：background/options 监听 `chrome.storage.local` 中该 key 的变化，并返回 unsubscribe。
+- `getSettings()`：background/options 解包 envelope 或 legacy raw object，再经 `mergeSettings()` 返回纯 `ExtensionSettings`。
+- `createSettingsWriteRevision()` / `saveSettings(settings, revision)`：Options 在每次写前生成 caller-known UUID；即使 settings 值相同，envelope revision 也不同，从而产生可关联的写入 provenance。
+- `watchSettings()`：background/options 监听 `chrome.storage.local` 中该 key 的变化，返回 canonical settings 与独立 `{ revision | null }` metadata，并提供 unsubscribe；legacy raw change 的 revision 是 `null`。
 - `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`；连接/读取错误走显式 error callback。
 
 Background 启动时调用 `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`，content script 不直接访问完整 storage。不要绕过这些封装直接调用 `chrome.storage.local`。
@@ -232,16 +232,16 @@ type ExtensionSettings = {
 1. selected provider 依次取有效 `generationProvider`、有效 `summaryProvider`、仓库默认 `deepseek`。
 2. 如果 raw object **拥有** `generationProviderSettings` 属性（即使值 malformed），只规范化新 schema，为 catalog 中每个 provider 生成 profile，并忽略旧 global credential/model 字段；这防止用户清空的新 profile 被旧 key 复活。
 3. 只有新属性完全缺失时，才把 legacy globals 迁入 selected provider：API key 优先使用 string 类型的 `generationApiKey`，否则取 `summaryApiKey`；每个 task model 优先使用 string 类型的 `generationModels[task]`，否则取 `summaryModel`。空或全空白的 current string 仍算已提供，会 trim 成空而不会继续 fallback；其他 provider 保持空 profile。prompt 内容保持原样，并按相同的 current/legacy string-type fallback 读取。
-4. `summary` tab 仍迁为 `overview`，`read` 仍迁为 `intensive`；`generationAccessMode`/`summaryAccessMode` 被忽略。`saveSettings()` 只写 canonical schema，普通 read 不会自动回写 migration。
+4. `summary` tab 仍迁为 `overview`，`read` 仍迁为 `intensive`；`generationAccessMode`/`summaryAccessMode` 被忽略。`saveSettings()` 的 envelope payload 只含 canonical schema，普通 read 不会自动回写 migration。
 
 `PublicExtensionSettings` 只含 `defaultTab`、`generationEnabled`、copy/download format 和 `generationSettingsKey`，且 port validator 会校验三个 enum。`generationSettingsKey` 的输入只有 selected provider id、selected profile 的 Overview/Intensive models 和共享 prompt templates；它明确排除 API key、任何 key-derived material 和 inactive profiles。输入经 64-bit FNV-1a 生成固定 13 字符 base36 digest，public payload 保持 opaque/bounded；切换 provider、修改 selected model 或 prompt 会使生成结果失效，只改 key 或 inactive profile 不会。
 
 Options 使用 `loading | ready | saving | error` 状态机，而不是先放一份可编辑默认值：
 
-- load 时 `draft = null`，form/save/reset 不可用，但 About 仍可导航；先订阅 `watchSettings()` 再启动 read，read pending 期间只保留最新 watcher value，并在 read resolve 时优先采用它，消除 read→subscribe handoff 丢写窗口。失败则显示 Retry，不能保存 defaults；reload/disconnect 会让 stale promise 失效、清空 retained save acknowledgements 并注销 watcher/timer。
+- load 时 `draft = null`，form/save/reset 不可用，但 About 仍可导航；先订阅 `watchSettings()` 再启动 read，read pending 期间只保留最新 watcher value，并在 read resolve 时优先采用它，消除 read→subscribe handoff 丢写窗口。失败则显示 Retry，不能保存 defaults；reload/disconnect 会让 stale promise 失效、清空 retained write revisions 并注销 watcher/timer。
 - dirty 由 `JSON.stringify(mergeSettings(draft))` 与 baseline 比较得出。save 只允许在 `ready` 且无 conflict 时开始；保存期间整个 fieldset（含 save/reset）禁用，save 返回的 canonical value 成为新 baseline。save 失败则保留 draft、回到 `ready` 并显示错误。
 - clean form 收到外部 storage 更新会立即采用；dirty 或 saving form 保存最新 external value 为 conflict 并阻止 save。“载入外部设置”用 external value 同时替换 draft/baseline；“保留当前编辑”只把 baseline 移到 external value，因此 local draft 仍 dirty，下一次 save 是明确覆盖。
-- watcher 中与 pending snapshot 相同的值是 own-save acknowledgement，不是 conflict；save 已 resolve 但 watcher event 未到时，snapshot identity 保留在最多 8 项的 bounded set 中直到消费。迟到 acknowledgement 不会清除或替换已持有的较新 conflict，retained set 在 reload/disconnect 重置。
+- Options 在 `saveSettings()` 前创建 unique revision；只有 watcher metadata 中相同 revision 才是 own-save acknowledgement，canonical value equality 从不作为 provenance。save 已 resolve 但 watcher event 未到时，revision 保留在最多 8 项的 bounded set 中直到消费；迟到 acknowledgement 不会清除或替换已持有的较新 conflict。未来同值 external write 使用不同/null revision，因此 X/no-ack → Z → X 不会被吞掉；retained set 在 reload/disconnect 重置。
 - API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
 
 ## 信任边界与外发数据
