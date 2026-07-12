@@ -48,19 +48,21 @@ async function runGenerationStream(
     deps: GenerationPortDependencies,
 ): Promise<void> {
     try {
-        const fullText = await deps.keepAlive(async () => {
-            const settings = await deps.getSettings();
-            return deps.streamGenerationFromApi({
-                settings,
-                request,
-                signal: controller.signal,
-                onToken: (deltaText) => {
-                    if (!controller.signal.aborted) {
-                        postToPort(port, { type: "token", text: deltaText });
-                    }
-                },
-            });
-        }, controller.signal);
+        const settings = await deps.getSettings();
+        if (!settings.generationEnabled) {
+            throw new Error("Generation is disabled in the extension settings.");
+        }
+
+        const fullText = await deps.keepAlive(() => deps.streamGenerationFromApi({
+            settings,
+            request,
+            signal: controller.signal,
+            onToken: (deltaText) => {
+                if (!controller.signal.aborted) {
+                    postToPort(port, { type: "token", text: deltaText });
+                }
+            },
+        }), controller.signal);
 
         if (!controller.signal.aborted) {
             postToPort(port, { type: "done", text: fullText });
