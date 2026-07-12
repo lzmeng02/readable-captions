@@ -143,6 +143,7 @@ Public settings 有独立的 `pending | ready | error` readiness，不与字幕�
 - 只有 `watchPublicSettings()` 送达第一个通过校验的真实值后，Panel 才应用配置的默认 tab，并开放该值允许的动作。
 - settings port 缺失、连接抛错、background 返回错误，或在第一个值前断开，都会进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不用硬编码默认值兜底。
 - port 在至少一个有效值之后断开时，public client 保留最后的 `ready` 值；后续生成仍会由 background 重新读取 canonical settings 并执行 `generationEnabled` gate。
+- Background 为每个 public-settings port 保存 revision；live `watchSettings()` broadcast 会推进 revision，使该 port 尚未完成的初始 read success/error 失效，disconnect 则删除 port。这样较新的 live value 不会被旧 snapshot 或迟到的 read error 覆盖。
 - 后续 `generationEnabled` 关闭或 `generationSettingsKey` 改变都会清空已有生成状态；设置读取失败时同样清空。`dispose()` 才停止 long-lived settings watcher。
 
 当前原文视图没有搜索和当前播放行高亮；这些能力如果进入计划，必须作为未实现功能处理。
@@ -171,28 +172,28 @@ streamGeneration(request)
                                           : { type: "error" }
   ← { type: "token", text } ───────── one raw content delta
   ← { type: "done", text }  ───────── completed Markdown
-  ← { type: "error", message } ────── user-visible retry state
+  ← { type: "error", code } ───────── validated code → safe retry message
   → { type: "cancel" } ────────────── AbortController.abort()
 ```
 
 API parser 和 background 的 `token.text` 都是 raw delta；content-side provider 线性累加 delta，再把 snapshot 交给 panel。`done.text` 是 background 严格校验后的 canonical final output，content 以它覆盖最终状态。每个 port 只维护一个 active request；同一 port 上的新 start、cancel 或 disconnect 会中止旧请求，late output 被 signal/request guard 丢弃。Panel 的 request version、reset 和 cleanup 提供第二层 stale-callback 防护。
 
-Background 对每个 start 先读取 canonical settings，并在任何 keepalive/provider side effect 前检查 `generationEnabled`。关闭时返回稳定错误 `Generation is disabled in the extension settings.`，不会启动 keepalive，也不会调用 provider。开启时 `withKeepAlive()` 只包住这一次完整 API stream，并每 25 秒调用一次 `chrome.runtime.getPlatformInfo()`；timer 在 success、error 或 abort 时立即且幂等清理。它不是全局常驻 timer，也不跨 replacement 复用。
+Background 对每个 start 先读取 canonical settings，并在任何 keepalive/provider side effect 前检查 `generationEnabled`。关闭时返回稳定的 `generation-disabled` code，不会启动 keepalive，也不会调用 provider。generation runtime error 只传 `GenerationErrorCode`，content 通过有限 code/message registry 构造用户可见错误；已知 settings/config/disabled/runtime 类别保留稳定提示，未知 dependency error 统一为 `generation-failed`。HTTP error body/status text、streamed provider `error.message` 和任意 dependency `Error.message` 不进入 runtime message、Panel DOM 或日志。开启时 `withKeepAlive()` 只包住这一次完整 API stream，并每 25 秒调用一次 `chrome.runtime.getPlatformInfo()`；timer 在 success、error 或 abort 时立即且幂等清理。它不是全局常驻 timer，也不跨 replacement 复用。
 
 ### Provider 行为
 
 - `src/generation/provider-catalog.ts` 是 provider id、Options label/help/placeholder/default model 和 request builder 的单一 catalog；`GenerationProvider` 由 catalog id 推导，Options 直接遍历同一 catalog，不维护第二份 provider 列表。
 - `streamGenerationFromApi()` 先按 `generationProvider` 取得 catalog entry，再只读取 `generationProviderSettings[generationProvider]`。selected profile 的 key 为空会在 `fetch` 前报错；模型使用对应 task 的配置，`note` 复用 `intensive`，仅在 catalog entry 声明 `defaultModel` 时才做 request-time fallback。
-- endpoint、Authorization header 和 provider-specific body 由 selected entry 的 `buildRequest()` 产生。当前 catalog 的 `streamDecoder` 只有 `chat-completions-sse`，OpenAI 与 DeepSeek 共用现有 strict SSE parser；新增不同流协议前还需要扩展 decoder 类型和 transport dispatch，不能只写一个 catalog 字段。
+- endpoint、Authorization header 和 provider-specific body 由 selected entry 的 `buildRequest()` 产生。`ProviderRequest.streamDecoder` 必须经过 `satisfies Record<GenerationStreamDecoderId, ProviderStreamDecoder>` 的 exhaustive registry dispatch；当前唯一 adapter 是 `chat-completions-sse`，OpenAI 与 DeepSeek 共用它。扩展 decoder union 会在 adapter 未实现时产生 type error，不能只写一个 catalog 字段。
 - OpenAI endpoint 固定为 `https://api.openai.com/v1/chat/completions`。
 - DeepSeek endpoint 固定为 `https://api.deepseek.com/chat/completions`。
 - 当前没有自定义 base URL 或任意 OpenAI-compatible endpoint 设置。
-- DeepSeek 模型留空时使用 `deepseek-v4-flash`；OpenAI 模型留空会报错。
+- DeepSeek 模型留空时使用 catalog 的 `deepseek-v4-flash`；无 catalog default 的 provider 模型留空时，由 catalog-owned resolver 使用 selected entry label 产生缺模型错误，不在 transport 中硬编码 OpenAI。
 - `note` 复用 intensive 的模型和自定义 prompt 配置，但使用独立的 Note base prompt。
 - OpenAI body 只包含 common fields：`model`、`messages`、`stream: true`。
 - DeepSeek body 在 common fields 之外增加顶层 `thinking: { type: "enabled" }` 和 `reasoning_effort: "high"`。不要给 OpenAI 发送这两个字段，也不要重新引入 `extra_body`。
 
-SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` 和 reasoning-only progress；它只把非空 `choices[0].delta.content` 加入文本。Malformed JSON 和 streamed provider error 立即失败。EOF 只有同时满足已收到 `[DONE]`、最终 `finish_reason === "stop"`、且累计 content 非空才成功；缺 `[DONE]`、非 stop、reasoning-only 或空输出都进入 error/retry，不能把 partial text 当 success。content-bearing stop event 的 delta 会先纳入 final text。
+SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` 和 reasoning-only progress；它只把非空 `choices[0].delta.content` 加入文本。Malformed JSON 和 streamed provider error 立即映射到稳定 safe category，不保留/抛出 provider-owned message。EOF 只有同时满足已收到 `[DONE]`、最终 `finish_reason === "stop"`、且累计 content 非空才成功；缺 `[DONE]`、非 stop、reasoning-only 或空输出都进入 `provider-response-invalid`/retry，不能把 partial text 当 success。content-bearing stop event 的 delta 会先纳入 final text。
 
 ## Settings 与迁移
 
@@ -233,19 +234,20 @@ type ExtensionSettings = {
 3. 只有新属性完全缺失时，才把 legacy globals 迁入 selected provider：API key 优先使用 string 类型的 `generationApiKey`，否则取 `summaryApiKey`；每个 task model 优先使用 string 类型的 `generationModels[task]`，否则取 `summaryModel`。空或全空白的 current string 仍算已提供，会 trim 成空而不会继续 fallback；其他 provider 保持空 profile。prompt 内容保持原样，并按相同的 current/legacy string-type fallback 读取。
 4. `summary` tab 仍迁为 `overview`，`read` 仍迁为 `intensive`；`generationAccessMode`/`summaryAccessMode` 被忽略。`saveSettings()` 只写 canonical schema，普通 read 不会自动回写 migration。
 
-`PublicExtensionSettings` 只含 `defaultTab`、`generationEnabled`、copy/download format 和 `generationSettingsKey`，且 port validator 会校验三个 enum。`generationSettingsKey` 是 selected provider id、selected profile 的 Overview/Intensive models、共享 prompt templates 的 hash；它明确排除 API key、任何 key-derived material 和 inactive profiles。切换 provider、修改 selected model 或 prompt 会使生成结果失效；只改 key 或 inactive profile 不会。
+`PublicExtensionSettings` 只含 `defaultTab`、`generationEnabled`、copy/download format 和 `generationSettingsKey`，且 port validator 会校验三个 enum。`generationSettingsKey` 的输入只有 selected provider id、selected profile 的 Overview/Intensive models 和共享 prompt templates；它明确排除 API key、任何 key-derived material 和 inactive profiles。输入经 64-bit FNV-1a 生成固定 13 字符 base36 digest，public payload 保持 opaque/bounded；切换 provider、修改 selected model 或 prompt 会使生成结果失效，只改 key 或 inactive profile 不会。
 
 Options 使用 `loading | ready | saving | error` 状态机，而不是先放一份可编辑默认值：
 
-- load 时 `draft = null`，form/save/reset 不可用，但 About 仍可导航；成功后建立 `draft`/`baseline` 并订阅 `watchSettings()`，失败则显示 Retry，不能保存 defaults。disconnect 会让 stale promise 失效并注销 watcher/timer。
+- load 时 `draft = null`，form/save/reset 不可用，但 About 仍可导航；先订阅 `watchSettings()` 再启动 read，read pending 期间只保留最新 watcher value，并在 read resolve 时优先采用它，消除 read→subscribe handoff 丢写窗口。失败则显示 Retry，不能保存 defaults；reload/disconnect 会让 stale promise 失效、清空 retained save acknowledgements 并注销 watcher/timer。
 - dirty 由 `JSON.stringify(mergeSettings(draft))` 与 baseline 比较得出。save 只允许在 `ready` 且无 conflict 时开始；保存期间整个 fieldset（含 save/reset）禁用，save 返回的 canonical value 成为新 baseline。save 失败则保留 draft、回到 `ready` 并显示错误。
 - clean form 收到外部 storage 更新会立即采用；dirty 或 saving form 保存最新 external value 为 conflict 并阻止 save。“载入外部设置”用 external value 同时替换 draft/baseline；“保留当前编辑”只把 baseline 移到 external value，因此 local draft 仍 dirty，下一次 save 是明确覆盖。
-- watcher 中与 pending snapshot 相同的值是 own-save acknowledgement，不是 conflict；在该 acknowledgement 之后到达的更新仍保留为 conflict，不能被 save resolve 清掉。
+- watcher 中与 pending snapshot 相同的值是 own-save acknowledgement，不是 conflict；save 已 resolve 但 watcher event 未到时，snapshot identity 保留在最多 8 项的 bounded set 中直到消费。迟到 acknowledgement 不会清除或替换已持有的较新 conflict，retained set 在 reload/disconnect 重置。
 - API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
 
 ## 信任边界与外发数据
 
 - LLM HTTP 请求和 `Authorization` header 只在 background service worker 中创建。除 Options 的凭据输入框外，不要把 key 放进 runtime-port message、Bilibili 页面/panel DOM、console 或导出内容。
+- Provider/dependency 原始 error text 也属于 background trust boundary：HTTP error body/status、SSE error payload 和任意 dependency `Error.message` 只能映射成有限 `GenerationErrorCode`，不得进入 message/DOM/log；Panel 对非 typed generation error 再 fail-safe 为 generic message。
 - Content script 只通过 public-settings port 接收 `PublicExtensionSettings`；该对象不含 provider id、profiles、API keys 或 prompts。Background/options 才能读取完整 `ExtensionSettings`。
 - 发给 LLM 的内容包含完整字幕、视频标题、URL、字幕来源以及可用的 `aid`/`cid`。产品或 UI 增加隐私提示时应以此为准。
 - API key 与其他设置保存在限制为 trusted contexts 的 `chrome.storage.local`，仓库不读取 `.env`，也不应把密钥写入源码、fixture 或日志。

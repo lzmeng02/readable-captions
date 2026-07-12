@@ -38,7 +38,7 @@
 - Consumes: current `mergeSettings()`, `getSettings()`, `saveSettings()`, `watchSettings()`, `toPublicSettings()`, `watchPublicSettings()`, `streamGenerationFromApi()`, `attachGenerationStreamPort()`, `ReadableCaptionsOptionsApp`, and `mountPanel()` behavior.
 - Produces: a committed RED contract for provider isolation, migration, lifecycle gates, canonical defaults, and background enforcement. Tests may use `unknown`/runtime structural assertions so missing future types produce assertion failures rather than module-resolution errors.
 
-- [ ] **Step 1: Add settings migration and normalization RED tests**
+- [x] **Step 1: Add settings migration and normalization RED tests**
 
 Create `tests/unit/settings/defaults.test.ts` with explicit structural assertions. Use fake non-secret values only:
 
@@ -128,7 +128,7 @@ describe("provider settings normalization", () => {
 });
 ```
 
-- [ ] **Step 2: Add storage and public-boundary tests**
+- [x] **Step 2: Add storage and public-boundary tests**
 
 Create `tests/unit/settings/storage.test.ts` with a complete fake `chrome.storage.local` object and these assertions:
 
@@ -196,7 +196,7 @@ it("keeps cache identity secret-independent and scoped to the selected profile",
 });
 ```
 
-- [ ] **Step 3: Add provider-selection request RED tests**
+- [x] **Step 3: Add provider-selection request RED tests**
 
 Create `tests/unit/generation/llm-api-provider-selection.test.ts`. Build hybrid fixtures containing both the desired profiles and deliberately wrong legacy trap fields so the current implementation reaches `fetch()` and fails the boundary assertions:
 
@@ -249,7 +249,7 @@ it("rejects a missing selected-provider key before fetch", async () => {
 
 Add a DeepSeek case that asserts its own key, request-time `deepseek-v4-flash` default, thinking fields, and absence of `extra_body`.
 
-- [ ] **Step 4: Add Options state and profile-isolation RED tests**
+- [x] **Step 4: Add Options state and profile-isolation RED tests**
 
 In the two new jsdom files, mock only `getSettings`, `saveSettings`, and `watchSettings`. Use deferred promises to assert:
 
@@ -282,7 +282,7 @@ it("isolates API keys and models across repeated provider switches", async () =>
 
 Add complete tests for rejected load + retry, save-time fieldset lock and programmatic event guard, whitespace-only key status, clean external update, dirty conflict blocking save, both conflict-resolution actions, edit-then-revert becoming clean, own-save watcher acknowledgement, newer external event preservation, and disposer invocation.
 
-- [ ] **Step 5: Add public-client, Panel readiness, and Background gate RED tests**
+- [x] **Step 5: Add public-client, Panel readiness, and Background gate RED tests**
 
 Test the future two-callback public client without importing nonexistent modules:
 
@@ -323,7 +323,7 @@ it("does not start keepalive or a provider request when generation is disabled",
 });
 ```
 
-- [ ] **Step 6: Run the focused RED suite and confirm the reasons**
+- [x] **Step 6: Run the focused RED suite and confirm the reasons**
 
 Run:
 
@@ -333,7 +333,7 @@ npm test -- tests/unit/settings/defaults.test.ts tests/unit/settings/storage.tes
 
 Expected: failures specifically show missing provider profiles, legacy credential reuse, access-mode survival, invalid enum acceptance, editable/loading defaults, shared provider inputs, silent public fallback, Panel actions before settings, and Background API execution while disabled. Fix test syntax/setup until the suite fails only for those behaviors; do not touch `src/`.
 
-- [ ] **Step 7: Commit the RED tests**
+- [x] **Step 7: Commit the RED tests**
 
 ```powershell
 git add -- tests/unit/settings tests/unit/generation/llm-api-provider-selection.test.ts tests/unit/background/background-stream.test.ts tests/dom/options tests/dom/panel/mount-settings-readiness.test.ts
@@ -358,7 +358,7 @@ git commit -m "test: capture provider settings regressions"
 - Produces: `GENERATION_PROVIDERS`, `GENERATION_PROVIDER_VALUES`, `GenerationProvider`, `isGenerationProvider()`, `getGenerationProvider()`, `GenerationProviderProfile`, `GenerationProviderSettings`, and canonical `ExtensionSettings.generationProviderSettings`.
 - Preserves: existing `streamGenerationFromApi()` and public-settings external signatures until later tasks.
 
-- [ ] **Step 1: Add the provider catalog**
+- [x] **Step 1: Add the provider catalog**
 
 Implement these exact public shapes in `src/generation/provider-catalog.ts`:
 
@@ -431,7 +431,7 @@ export function getGenerationProvider(provider: GenerationProvider): GenerationP
 }
 ```
 
-- [ ] **Step 2: Replace the settings schema and migration**
+- [x] **Step 2: Replace the settings schema and migration**
 
 In `types.ts`, import/re-export `GenerationProvider` and define the profile types from the approved design. Remove access-mode constants/types and global key/model properties.
 
@@ -451,9 +451,9 @@ const providerSettings = hasProviderSettings
     : migrateLegacyProviderSettings(raw, provider);
 ```
 
-- [ ] **Step 3: Derive and validate public settings**
+- [x] **Step 3: Derive and validate public settings**
 
-Update `public.ts` so the cache payload reads only the selected profile models and shared prompts. Validate `defaultTab`, copy, and download values against their exported arrays. Define `DEFAULT_PUBLIC_SETTINGS` after projection helpers as:
+Update `public.ts` so the cache payload reads only the selected profile models and shared prompts, then reduce that secret-free payload to a deterministic 64-bit FNV-1a digest encoded as fixed 13-character base36. Validate `defaultTab`, copy, and download values against their exported arrays. Define `DEFAULT_PUBLIC_SETTINGS` after projection helpers as:
 
 ```ts
 export const DEFAULT_PUBLIC_SETTINGS = toPublicSettings(DEFAULT_SETTINGS);
@@ -461,13 +461,13 @@ export const DEFAULT_PUBLIC_SETTINGS = toPublicSettings(DEFAULT_SETTINGS);
 
 Do not include provider profiles, API keys, access mode, inactive profiles, or key-derived material.
 
-- [ ] **Step 4: Migrate request selection and Options provider controls**
+- [x] **Step 4: Migrate request selection and Options provider controls**
 
-In `llm-api.ts`, remove endpoint/body provider conditionals. Resolve the selected profile and catalog entry, require the selected key, choose the task model (`note` uses `intensive`), fall back only to the catalog entry's `defaultModel`, call `buildRequest()`, and feed its URL/headers/body to `fetch()`. Reject an empty OpenAI model with the existing clear error.
+In `llm-api.ts`, remove endpoint/body provider conditionals. Resolve the selected profile and catalog entry, require the selected key, choose the task model (`note` uses `intensive`), and resolve explicit/default model through catalog-owned validation using the selected entry identity. Call `buildRequest()`, feed its URL/headers/body to `fetch()`, then consume `providerRequest.streamDecoder` through an exhaustive `Record<GenerationStreamDecoderId, ProviderStreamDecoder>` registry. Extending the decoder union must fail typecheck until its adapter is implemented.
 
 In Options, iterate `GENERATION_PROVIDERS`, derive `selectedProfile`, and immutably update only that profile's key/models. Do not normalize on every input event; preserve the draft value and rely on configured-state `.trim()` plus save normalization. Add stable `data-provider` and `data-task` selectors used by the DOM tests.
 
-- [ ] **Step 5: Update test helpers and existing fixtures**
+- [x] **Step 5: Update test helpers and existing fixtures**
 
 Change `createSettings()` to deep-merge `generationProviderSettings` and prompts while still forcing a non-secret fake selected key for API tests:
 
@@ -483,7 +483,7 @@ export type SettingsOverrides = Partial<Omit<
 
 Update every old `generationApiKey`, `generationModels`, and `generationAccessMode` fixture found by `rg` to the canonical profile shape. Keep fake values visibly non-production (`oa-test-key`, `ds-test-key`).
 
-- [ ] **Step 6: Run provider/settings focused GREEN checks**
+- [x] **Step 6: Run provider/settings focused GREEN checks**
 
 ```powershell
 npm test -- tests/unit/settings/defaults.test.ts tests/unit/settings/storage.test.ts tests/unit/settings/public-settings.test.ts tests/unit/generation/llm-api-provider-selection.test.ts tests/unit/generation/llm-api-payload.test.ts tests/unit/generation/llm-api-stream.test.ts tests/unit/generation/llm-api-delta.test.ts tests/dom/options/options-provider-profiles.test.ts
@@ -492,7 +492,7 @@ npm exec tsc -- --noEmit --pretty false
 
 Expected: provider/schema/request/profile tests pass. Options lifecycle, Panel readiness, and disabled-background tests may remain RED until their tasks.
 
-- [ ] **Step 7: Commit the vertical slice**
+- [x] **Step 7: Commit the vertical slice**
 
 ```powershell
 git add -- src/generation/provider-catalog.ts src/generation/llm-api.ts src/settings src/options/index.ts tests/helpers/generation.ts tests/unit tests/dom/options/options-provider-profiles.test.ts
@@ -512,7 +512,7 @@ git commit -m "fix: isolate provider credentials and models"
 - Consumes: canonical settings plus `getSettings()`, `saveSettings()`, and `watchSettings()`.
 - Produces: `OptionsPhase`, guarded draft editing, canonical dirty comparison, external conflict resolution, own-save watcher acknowledgement, and lifecycle cleanup.
 
-- [ ] **Step 1: Introduce explicit component state**
+- [x] **Step 1: Introduce explicit component state**
 
 Use these fields and method boundaries:
 
@@ -534,15 +534,15 @@ private watchSequence = 0;
 
 Canonical equality is `JSON.stringify(mergeSettings(value))`. Derive dirty status from draft vs baseline; do not use a sticky boolean.
 
-- [ ] **Step 2: Guard load, retry, save, and teardown**
+- [x] **Step 2: Guard load, retry, save, and teardown**
 
-Start with `draft = null`. On load success set draft/baseline, enter ready, and subscribe. On failure enter error and render retry without editable defaults. Increment `operationVersion` on each load and disconnect so stale promises cannot commit. `disconnectedCallback()` invokes watcher cleanup and clears the status timer.
+Start with `draft = null`. Subscribe before starting the initial read; while the read is pending, buffer the latest watcher value and reconcile it ahead of the older read result before setting draft/baseline and entering ready. On failure enter error and render retry without editable defaults. Increment `operationVersion` on each load and disconnect so stale promises cannot commit. Reload/disconnect invokes watcher cleanup, resets retained acknowledgement identities, and clears the status timer.
 
 Every edit handler must check `phase === "ready"`; unresolved conflict also blocks submit. During save, disable the complete fieldset plus save/reset, retain a canonical snapshot key, and use the save return value as the new baseline.
 
-- [ ] **Step 3: Implement watcher ordering and conflict resolution**
+- [x] **Step 3: Implement watcher ordering and conflict resolution**
 
-Increment `watchSequence` for every watcher event. An incoming canonical key equal to the pending save snapshot is the component's own acknowledgement, not a conflict. A different incoming value replaces a clean draft, but becomes the latest conflict for a dirty/saving draft. Preserve external events newer than the own-save acknowledgement when save resolves.
+Increment `watchSequence` for every watcher event. An incoming canonical key equal to the pending save snapshot is the component's own acknowledgement, not a conflict. If save resolves before that watcher event, retain the unobserved snapshot identity in a bounded set until consumed; consuming it must not clear or replace an already-held newer external conflict. A different incoming value replaces a clean draft, but becomes the latest conflict for a dirty/saving draft. Preserve external events newer than the own-save acknowledgement when save resolves.
 
 Implement exact resolution semantics:
 
@@ -563,11 +563,11 @@ private handleKeepLocal(): void {
 
 The second path remains dirty and makes the next save an explicit overwrite.
 
-- [ ] **Step 4: Render the state machine**
+- [x] **Step 4: Render the state machine**
 
 Render a loading status while loading, a `role="alert"` error with Retry on failure, and the form only when a draft exists. Wrap settings content in a borderless fieldset disabled during saving. Render a conflict banner with “载入外部设置” and “保留当前编辑”; disable save until one is selected. Keep About navigable.
 
-- [ ] **Step 5: Run Options GREEN checks and commit**
+- [x] **Step 5: Run Options GREEN checks and commit**
 
 ```powershell
 npm test -- tests/dom/options/options-state.test.ts tests/dom/options/options-provider-profiles.test.ts tests/dom/options/options-live-controls.test.ts
@@ -578,13 +578,15 @@ git commit -m "fix: make options settings race safe"
 
 ---
 
-### Task 4: Fail closed until real public settings reach Panel
+### Task 4: Order public snapshots and fail closed until real settings reach Panel
 
 **Files:**
+- Modify: `src/background-app.ts`
 - Modify: `src/settings/public-client.ts`
 - Modify: `src/panel/mount.ts`
 - Modify: `src/panel/panel-view.ts`
 - Test: `tests/unit/settings/public-client.test.ts`
+- Test: `tests/unit/background/background-app.test.ts`
 - Test: `tests/dom/panel/mount-settings-readiness.test.ts`
 - Test: existing `tests/dom/panel/*.test.ts`
 
@@ -592,7 +594,7 @@ git commit -m "fix: make options settings race safe"
 - Produces: `watchPublicSettings(onSettings, onError)`, `PublicSettingsStatus = "pending" | "ready" | "error"`, and fail-closed Panel UI options.
 - Preserves: Original transcript visibility, settings navigation, panel handle lifecycle, generated state invalidation, export behavior after readiness, and all subtitle-language behavior.
 
-- [ ] **Step 1: Make public-client errors explicit**
+- [x] **Step 1: Order Background snapshot/live delivery and make public-client errors explicit**
 
 Change the signature to:
 
@@ -603,9 +605,11 @@ export function watchPublicSettings(
 ): () => void;
 ```
 
+In `background-app.ts`, store a revision per connected public-settings port. A live `watchSettings()` broadcast advances the revision and invalidates that port's pending initial read success/error; disconnect deletes the port so late completions are ignored.
+
 No port, a thrown connect, a background `{ type: "error" }`, or disconnect before the first value calls `onError` once and never publishes defaults. Valid settings call `onSettings`. Invalid messages are ignored. Cleanup remains idempotent and must not call `onError`.
 
-- [ ] **Step 2: Gate Panel behavior on readiness**
+- [x] **Step 2: Gate Panel behavior on readiness**
 
 Replace hard-coded authorization defaults with nullable/readiness state:
 
@@ -620,11 +624,11 @@ let downloadFormat: PublicExtensionSettings["downloadFormat"] | null = null;
 
 Require `settingsStatus === "ready"` in generation, Note open/retry, copy, download, and generated-tab selection paths. Apply the first real default tab only from `onSettings`. An error sets status/error, aborts/clears generation work, and renders without substituting defaults.
 
-- [ ] **Step 3: Render accessible disabled actions and error state**
+- [x] **Step 3: Render accessible disabled actions and error state**
 
 Extend `PanelUiOptions` with status/error. Disable header copy/download, generated tabs, and Note generation until ready; leave Original transcript and Settings navigation available. Add a compact `role="alert"` for error and `role="status"` for pending. Disabled buttons must use native `disabled`, not only CSS.
 
-- [ ] **Step 4: Run Panel/public GREEN checks and commit**
+- [x] **Step 4: Run Panel/public GREEN checks and commit**
 
 ```powershell
 npm test -- tests/unit/settings/public-client.test.ts tests/dom/panel/mount-settings-readiness.test.ts tests/dom/panel/mount.test.ts tests/dom/panel/mount-generation-render.test.ts
@@ -635,25 +639,33 @@ git commit -m "fix: gate panel actions on loaded settings"
 
 ---
 
-### Task 5: Enforce disabled generation in Background
+### Task 5: Enforce disabled generation and the safe error boundary in Background
 
 **Files:**
+- Create: `src/generation/errors.ts`
 - Modify: `src/generation/background-stream.ts`
+- Modify: `src/generation/llm-api.ts`
+- Modify: `src/generation/sse.ts`
+- Modify: `src/generation/protocol.ts`
+- Modify: `src/generation/llm-provider.ts`
+- Modify: `src/panel/mount.ts`
 - Test: `tests/unit/background/background-stream.test.ts`
 - Test: `tests/unit/background/background-entry.test.ts`
+- Test: `tests/unit/generation/llm-api-stream.test.ts`
+- Test: `tests/dom/panel/mount.test.ts`
 
 **Interfaces:**
 - Consumes: canonical `getSettings()` and existing generation request/port contracts.
-- Produces: a stable disabled error without keepalive or provider access.
+- Produces: a stable disabled error without keepalive/provider access and a finite validated generation error-code boundary that never forwards provider/dependency text.
 
-- [ ] **Step 1: Move the settings read and gate before keepalive**
+- [x] **Step 1: Move the settings read and gate before keepalive**
 
 Use this ordering inside `runGenerationStream()`:
 
 ```ts
 const settings = await deps.getSettings();
 if (!settings.generationEnabled) {
-    throw new Error("Generation is disabled in the extension settings.");
+    throw new GenerationUserError("generation-disabled");
 }
 const fullText = await deps.keepAlive(() => deps.streamGenerationFromApi({
     settings,
@@ -665,9 +677,9 @@ const fullText = await deps.keepAlive(() => deps.streamGenerationFromApi({
 }), controller.signal);
 ```
 
-Do not add a second provider/config cache in Background.
+Do not add a second provider/config cache in Background. Generation port failures carry only a validated `GenerationErrorCode`; known local/config/disabled failures use typed categories and unknown errors map to `generation-failed`. HTTP error bodies/status text and streamed provider error text must not enter runtime messages, Panel DOM, or logs. Add fake-marker leak regressions at HTTP, SSE, background-port, and Panel boundaries.
 
-- [ ] **Step 2: Run Background and generation regression tests**
+- [x] **Step 2: Run Background and generation regression tests**
 
 ```powershell
 npm test -- tests/unit/background tests/unit/generation
@@ -676,7 +688,7 @@ npm exec tsc -- --noEmit --pretty false
 
 Expected: disabled test passes; keepalive, cancel, replacement, disconnect, strict SSE, and provider body tests remain green.
 
-- [ ] **Step 3: Commit the defense-in-depth gate**
+- [x] **Step 3: Commit the defense-in-depth gate**
 
 ```powershell
 git add -- src/generation/background-stream.ts tests/unit/background
@@ -700,7 +712,7 @@ git commit -m "fix: enforce generation setting in background"
 
 In `architecture.md`, replace the old global key/model/access-mode table with `generationProviderSettings`, selected-profile request flow, migration precedence, secret-free cache identity, and fail-closed readiness. In `development.md`, add the exact “new provider” checklist: catalog adapter, host permission, privacy disclosure, unit tests, both Options profiles, and real Chrome smoke. Keep `AGENTS.md` to one concise invariant only if its current settings paragraph would otherwise be misleading.
 
-- [ ] **Step 2: Run the complete automated verification**
+- [x] **Step 2: Run the complete automated verification**
 
 ```powershell
 npm test

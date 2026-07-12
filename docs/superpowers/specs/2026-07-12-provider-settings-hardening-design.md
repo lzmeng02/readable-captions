@@ -2,8 +2,8 @@
 
 - **Date:** 2026-07-12
 - **Status:** Approved
-- **Target branch:** `fix/code-review-bugs`
-- **Target baseline:** `8f030b6`
+- **Feature branch:** `fix/provider-settings-hardening`
+- **Stacked base:** `fix/code-review-bugs` at `8f030b6`
 
 ## Goal
 
@@ -71,7 +71,7 @@ Add a generation provider catalog under `src/generation/`. Each entry owns:
 
 `GenerationProvider` is derived from the catalog's provider ids. Options iterates the catalog instead of rendering hard-coded OpenAI and DeepSeek buttons. The background generation path resolves the same catalog entry before building a request.
 
-OpenAI and DeepSeek continue to share the existing Chat Completions SSE decoder. Their request builders remain distinct: OpenAI receives only common fields, while DeepSeek adds its supported thinking fields. The catalog creates a defined seam for a future provider with different authentication, body fields, or streaming protocol without pretending that every future provider is OpenAI-compatible.
+OpenAI and DeepSeek continue to share the existing Chat Completions SSE decoder. Their request builders remain distinct: OpenAI receives only common fields, while DeepSeek adds its supported thinking fields. `llm-api.ts` dispatches `ProviderRequest.streamDecoder` through an exhaustive `Record<GenerationStreamDecoderId, adapter>` registry, so extending the decoder union creates a compile-time obligation to implement an adapter. The catalog creates a defined seam for a future provider with different authentication, body fields, or streaming protocol without pretending that every future provider is OpenAI-compatible.
 
 Adding a provider requires:
 
@@ -149,11 +149,12 @@ The API key and both model inputs bind to `generationProviderSettings[generation
 
 Provider buttons, labels, help links, model placeholders, and default-model explanations come from the provider catalog. Prompt controls remain shared.
 
-Options subscribes to `watchSettings()` after the initial load and unsubscribes when disconnected:
+Options subscribes to `watchSettings()` before starting the initial storage read, buffers the latest watcher value while that read is pending, and reconciles the buffered value ahead of the older read result. Retry/reload replaces the subscription, and disconnect unsubscribes it, so the read-to-watch handoff cannot lose or overwrite a concurrent write:
 
 - if the form is clean, an external settings update replaces the displayed settings;
 - if local edits exist, the external update is held as a conflict and save is blocked;
 - the user may explicitly load the external version and discard local edits, or keep the local version and acknowledge that the next save will overwrite storage.
+- an own-save snapshot remains in a bounded acknowledgement set until its watcher event is consumed; a delayed acknowledgement is ignored without clearing or replacing a newer external conflict, and retained identities reset on reload/disconnect.
 
 This makes cross-tab overwrites an explicit user decision instead of a silent race.
 
@@ -162,6 +163,8 @@ This makes cross-tab overwrites an explicit user decision instead of a silent ra
 `DEFAULT_PUBLIC_SETTINGS` is derived with `toPublicSettings(DEFAULT_SETTINGS)` after the projection functions are defined. No public default literal is maintained separately.
 
 `watchPublicSettings()` reports settings and read/connect errors through explicit callbacks. It does not silently publish defaults after a failed connection or a background read error.
+
+For each public-settings port, Background records a revision when the initial `getSettings()` begins. Any live `watchSettings()` broadcast advances that port's revision and invalidates the pending initial success or error; disconnect removes the port so late completions are ignored. A newer live value therefore cannot be overwritten by an older snapshot or stale read failure.
 
 Public message validation checks the actual `defaultTab`, copy-format, and download-format enum values rather than accepting arbitrary strings. Invalid messages such as a fabricated `defaultTab: "generated"` are ignored and cannot create an impossible Panel mode. The public projection continues to omit the complete provider-profile object because it contains credentials.
 
@@ -177,7 +180,7 @@ There is no interval in which hard-coded `generationEnabled`, copy format, downl
 
 ## 6. Background Enforcement and Request Selection
 
-For every start request, background reads canonical settings and checks `generationEnabled` before starting keepalive or calling a provider. Disabled generation returns a stable error and performs no provider fetch.
+For every start request, background reads canonical settings and checks `generationEnabled` before starting keepalive or calling a provider. Disabled generation returns a stable error and performs no provider fetch. Generation failures cross the runtime boundary only as a validated `GenerationErrorCode`; a finite code-to-message registry preserves known local/config/disabled guidance while unknown dependency errors become a generic safe failure. Provider HTTP bodies/status text and streamed provider error text are never forwarded to runtime messages, Panel DOM, or logs.
 
 The request path then:
 
@@ -186,7 +189,7 @@ The request path then:
 3. rejects an empty selected-provider key before fetch;
 4. resolves the selected provider's task model or that provider's declared default;
 5. builds endpoint, headers, and body through the selected provider adapter;
-6. streams through the adapter's declared decoder.
+6. streams through the adapter's declared decoder via the exhaustive decoder registry.
 
 This pairing makes it structurally impossible for an OpenAI request to read the DeepSeek profile or vice versa. API keys never enter public-settings messages, generation messages, DOM, logs, generated output, documentation examples, or committed fixtures.
 
@@ -198,7 +201,7 @@ The public `generationSettingsKey` includes:
 - selected provider's Overview/Intensive models;
 - shared Overview/Intensive prompt templates.
 
-It no longer includes access mode or inactive provider profiles. It intentionally excludes API keys and every key-derived value. Switching provider or changing the selected provider's effective model invalidates generated state; editing an inactive provider profile does not invalidate the current output.
+It no longer includes access mode or inactive provider profiles. It intentionally excludes API keys and every key-derived value. The secret-free canonical payload is reduced to a deterministic 64-bit FNV-1a digest encoded as a fixed 13-character base36 value, replacing the collision-prone 32-bit digest while keeping the public value opaque and bounded. Switching provider or changing the selected provider's effective model invalidates generated state; editing an inactive provider profile does not invalidate the current output.
 
 ## 8. Test-First Strategy
 
