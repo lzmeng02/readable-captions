@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { closePanelMenu, panelTemplate, panelStyles } from "./panel-view";
+import { panelTemplate, panelStyles } from "./panel-view";
 import type { Mode, PublicSettingsStatus } from "./panel-view";
 import { streamGeneration } from "../generation/llm-provider";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
@@ -102,6 +102,7 @@ export function mountPanel(
     let uiLanguage: "zh" | "en" = "zh";
     let isDisposed = false;
     let isNoteOpen = false;
+    let isMenuOpen = false;
     let hasLoadedSettings = false;
     let copyFormat: PublicExtensionSettings["copyFormat"] | null = null;
     let downloadFormat: PublicExtensionSettings["downloadFormat"] | null = null;
@@ -401,7 +402,15 @@ export function mountPanel(
             handleDownload,
             handleSubtitleLanguageChange,
             { pendingSubtitleUrl, subtitleError },
-            { generationEnabled, settingsStatus, settingsError },
+            {
+                generationEnabled,
+                settingsStatus,
+                settingsError,
+                isMenuOpen,
+                onMenuOpenChange: (nextIsMenuOpen) => {
+                    isMenuOpen = nextIsMenuOpen;
+                },
+            },
             {
                 isOpen: isNoteOpen,
                 isGenerating: noteGenerationState.isGenerating,
@@ -520,7 +529,6 @@ export function mountPanel(
         clearAllGenerationStates();
         stopWatchingSettings?.();
         stopWatchingSettings = null;
-        closePanelMenu();
         document.removeEventListener("pointerdown", handlePointerDown, true);
     };
 
@@ -539,6 +547,7 @@ export function mountPanel(
             mode = "original";
             hasUserSelectedMode = false;
             isNoteOpen = false;
+            isMenuOpen = false;
             renderPanel();
         },
         dispose,

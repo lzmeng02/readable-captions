@@ -26,14 +26,11 @@ export type PanelUiOptions = {
     generationEnabled: boolean;
     settingsStatus: PublicSettingsStatus;
     settingsError: string | null;
+    isMenuOpen: boolean;
+    onMenuOpenChange: (isOpen: boolean) => void;
 };
 
 let isCollapsed = false;
-let isMenuOpen = false;
-
-export function closePanelMenu(): void {
-    isMenuOpen = false;
-}
 
 export function panelTemplate(
     mode: Mode,
@@ -54,11 +51,14 @@ export function panelTemplate(
         generationEnabled: false,
         settingsStatus: "pending",
         settingsError: null,
+        isMenuOpen: false,
+        onMenuOpenChange: () => undefined,
     },
     noteState?: NoteUiState,
 ) {
     const generationEnabled = uiOptions.generationEnabled;
     const settingsReady = uiOptions.settingsStatus === "ready";
+    const isMenuOpen = uiOptions.isMenuOpen;
 
     const toggleCollapse = () => {
         isCollapsed = !isCollapsed;
@@ -67,19 +67,19 @@ export function panelTemplate(
 
     const toggleMenu = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = !isMenuOpen;
+        uiOptions.onMenuOpenChange(!isMenuOpen);
         setMode(mode);
     };
 
     const closeMenu = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = false;
+        uiOptions.onMenuOpenChange(false);
         setMode(mode);
     };
 
     const handleSettingsClick = (event: Event) => {
         event.stopPropagation();
-        isMenuOpen = false;
+        uiOptions.onMenuOpenChange(false);
         setMode(mode);
         onSettingsClick();
     };
@@ -94,7 +94,7 @@ export function panelTemplate(
         if (!settingsReady) {
             return;
         }
-        isMenuOpen = false;
+        uiOptions.onMenuOpenChange(false);
         noteState?.onOpen();
     };
 
