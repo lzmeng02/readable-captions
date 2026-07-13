@@ -141,9 +141,9 @@ Public settings 有独立的 `pending | ready | error` readiness，不与字幕�
 
 - Panel 创建时先显示 `original`，并把 `generationEnabled` 设为 `false`、copy/download format 设为 `null`。原文和“设置”入口仍可用，但生成 tab、Note、复制和下载都以原生 `disabled` 或 handler guard fail closed。
 - 只有 `watchPublicSettings()` 送达第一个通过校验的真实值后，Panel 才应用配置的默认 tab，并开放该值允许的动作。
-- settings port 缺失、连接抛错、background 返回错误，或在第一个值前/已经 `ready` 后断开，都会报告一次当前 outage 并让 Panel 进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不保留旧 `ready` 权限，也不用硬编码默认值兜底。
-- `watchPublicSettings()` 会为同一 outage 只保留一个 reconnect timer，以 100 ms 起步做指数退避，并把单次等待限制在最多 5000 ms；缺失 port、connect 抛错和 disconnect 都进入同一重连路径。connection generation 与 active-port identity 使旧 port 的迟到 message/disconnect 失效；unsubscribe 会清 timer、使 generation 失效并安全断开 active port。
-- 只有新 active port 送达通过校验的 settings snapshot 才结束 outage、把退避重置为 100 ms 并再次调用 `onSettings`；Panel 随后从 `error` 恢复为 `ready`，按这份 authoritative snapshot 恢复允许的动作。重连期间从不发布 defaults。
+- settings port 缺失、连接抛错，或在第一个值前/已经 `ready` 后断开，都会报告一次当前 transport outage，并进入有界退避的重连路径。background 发来的 `type: "error"` read 结果同样报告 outage，但不会断开仍 current 的 port，也不会自行安排 reconnect timer。两条路径都会让 Panel 进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不保留旧 `ready` 权限，也不用硬编码默认值兜底。
+- 对 transport failure，`watchPublicSettings()` 会为同一 outage 只保留一个 reconnect timer，以 100 ms 起步做指数退避，并把单次等待限制在最多 5000 ms。connection generation 与 active-port identity 使旧 port 的迟到 message/disconnect 失效；unsubscribe 会清 timer、使 generation 失效并安全断开 active port。
+- 当前 port 送达通过消息校验、connection-generation 与 active-port identity 检查的有效 settings snapshot 时，才结束 outage、把退避重置为 100 ms 并再次调用 `onSettings`。这个 port 可以是 read error 后保留的同一个 active port（由后续 `watchSettings()` broadcast 恢复），也可以是 transport failure 后新连接的 active port；Panel 随后从 `error` 恢复为 `ready`，按这份 authoritative snapshot 恢复允许的动作。outage/reconnect 期间从不发布 defaults。
 - Background 为每个 public-settings port 保存 revision；live `watchSettings()` broadcast 会推进 revision，使该 port 尚未完成的初始 read success/error 失效，disconnect 则删除 port。这样较新的 live value 不会被旧 snapshot 或迟到的 read error 覆盖。
 - 后续 `generationEnabled` 关闭或 `generationSettingsKey` 改变都会清空已有生成状态；设置读取失败时同样清空。`dispose()` 才停止 long-lived settings watcher。
 
@@ -185,7 +185,7 @@ Background 对每个 start 先读取 canonical settings，并在任何 keepalive
 
 - Options 的 API-key control 刻意避开 password-manager/login semantics：它始终是 `type="text"`，使用 provider-specific `name="generationApiKey-<provider>"`，并设置 `autocomplete="off"`、`autocapitalize="off"`、`spellcheck="false"`；隐藏效果由 `.masked` 的 Chrome `-webkit-text-security` 提供，而不是 `type="password"`。
 - API key 与 Overview/Intensive model control 包在 `keyed(generationProvider, ...)` 中；切换 provider 会重建整组 credential/model DOM，而不是复用可能已被 Chrome Autofill 污染的节点。三个 value binding 都通过 Lit `live()` 比较 live DOM property 与 authoritative draft，因此即使模板值未变，也会纠正浏览器在渲染后写入的值。
-- reveal state 只属于当前 Options 状态，并在 provider 切换及 authoritative transition 后恢复隐藏：初始/重试 load、Reset、clean external refresh、“载入外部设置”和“保留当前编辑”都会设置 `showApiKey = false`。这不会删除或合并任何 persisted provider key。
+- reveal state 只属于当前 Options 状态，并在 provider 切换及 authoritative transition 后恢复隐藏：初始/重试 load、Reset、clean external refresh、“载入外部设置”和“保留当前编辑”都会设置 `showApiKey = false`。这些 browser-safety transition 不会仅因不同 provider 的 credential 相同就自动删除或合并 persisted key；Reset 仍只替换 draft，只有随后 Save 才持久化该 reset。
 - `src/generation/provider-catalog.ts` 是 provider id、Options label/help/placeholder/default model 和 request builder 的单一 catalog；`GenerationProvider` 由 catalog id 推导，Options 直接遍历同一 catalog，不维护第二份 provider 列表。
 - `streamGenerationFromApi()` 先按 `generationProvider` 取得 catalog entry，再只读取 `generationProviderSettings[generationProvider]`。selected profile 的 key 为空会在 `fetch` 前报错；模型使用对应 task 的配置，`note` 复用 `intensive`，仅在 catalog entry 声明 `defaultModel` 时才做 request-time fallback。
 - endpoint、Authorization header 和 provider-specific body 由 selected entry 的 `buildRequest()` 产生。`ProviderRequest.streamDecoder` 必须经过 `satisfies Record<GenerationStreamDecoderId, ProviderStreamDecoder>` 的 exhaustive registry dispatch；当前唯一 adapter 是 `chat-completions-sse`，OpenAI 与 DeepSeek 共用它。扩展 decoder union 会在 adapter 未实现时产生 type error，不能只写一个 catalog 字段。
