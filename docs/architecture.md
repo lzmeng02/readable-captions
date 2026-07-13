@@ -206,7 +206,7 @@ SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` �
 - `getSettings()`：background/options 解包 envelope 或 legacy raw object，再经 `mergeSettings()` 返回纯 `ExtensionSettings`。
 - `createSettingsWriteRevision()` / `saveSettings(settings, revision)`：Options 在每次写前生成 caller-known UUID；即使 settings 值相同，envelope revision 也不同，从而产生可关联的写入 provenance。
 - `watchSettings()`：background/options 监听 `chrome.storage.local` 中该 key 的变化，返回 canonical settings 与独立 `{ revision | null }` metadata，并提供 unsubscribe；legacy raw change 的 revision 是 `null`。
-- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`；连接/读取错误和任意阶段的 disconnect 走显式 outage callback，并以有上限的指数退避重连，直到有效 snapshot 恢复 readiness 或 caller unsubscribe。
+- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`。runtime connect 缺失/返回空 port/抛错以及任意阶段的 disconnect 会报告 outage，并触发有上限的指数退避重连；background read error 只报告 outage 并保留 current port。两条路径都只在通过消息校验与 connection-generation/active-port identity 检查的 settings snapshot 后恢复 readiness，或在 caller unsubscribe 时终止。
 
 Background 启动时调用 `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`，content script 不直接访问完整 storage。不要绕过这些封装直接调用 `chrome.storage.local`。
 
