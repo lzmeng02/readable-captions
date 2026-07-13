@@ -515,9 +515,11 @@ export function mountPanel(
     };
 
     const handlePointerDown = (event: PointerEvent): void => {
-        const path = event.composedPath();
-        const isInside = path.some((node: any) => node?.classList?.contains("more-actions-wrapper"));
+        if (!isMenuOpen) return;
+        const isInside = event.composedPath()
+            .some((node: any) => node?.classList?.contains("more-actions-wrapper"));
         if (!isInside) {
+            isMenuOpen = false;
             renderPanel();
         }
     };

@@ -86,6 +86,8 @@ export function panelTemplate(
 
     const handleLangClick = (event: Event) => {
         event.stopPropagation();
+        uiOptions.onMenuOpenChange(false);
+        setMode(mode);
         onLangClick?.();
     };
 

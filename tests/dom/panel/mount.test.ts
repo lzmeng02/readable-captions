@@ -236,6 +236,38 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
+    it("closes an open More menu on an outside pointer", () => {
+        const { host, handle } = mountReadyPanel();
+
+        try {
+            clickAction(host, "更多");
+            expect(moreMenu(host)).not.toBeNull();
+
+            document.body.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("closes the More menu when language is changed", () => {
+        const { host, handle } = mountReadyPanel();
+
+        try {
+            clickAction(host, "更多");
+            const language = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("语言"));
+            if (!language) throw new Error("Missing language action");
+
+            language.click();
+
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
     it("keeps More-menu state isolated between mounted panels", () => {
         const first = mountReadyPanel();
         const second = mountReadyPanel();
