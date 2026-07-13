@@ -1,6 +1,8 @@
 // src/options/index.ts
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { keyed } from "lit/directives/keyed.js";
+import { live } from "lit/directives/live.js";
 import { GENERATION_PROVIDERS, getGenerationProvider } from "../generation/provider-catalog";
 import { DEFAULT_SETTINGS, mergeSettings } from "../settings/defaults";
 import {
@@ -346,6 +348,10 @@ export class ReadableCaptionsOptionsApp extends LitElement {
             padding-right: 40px;
         }
 
+        .api-key-input.masked {
+            -webkit-text-security: disc;
+        }
+
         .toggle-visibility-btn {
             position: absolute;
             right: 10px;
@@ -600,6 +606,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         const operation = ++this.operationVersion;
         this.stopWatchingSettings();
         this.clearStatus();
+        this.showApiKey = false;
         this.phase = "loading";
         this.draft = null;
         this.baseline = null;
@@ -659,6 +666,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
         }
         if (this.phase !== "ready") return;
 
+        this.showApiKey = false;
         this.draft = nextSettings;
         this.baseline = nextSettings;
         this.conflict = null;
@@ -767,6 +775,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
     private setProvider(provider: GenerationProvider): void {
         if (this.phase !== "ready" || !this.draft) return;
+        this.showApiKey = false;
         this.draft = {
             ...this.draft,
             generationProvider: provider,
@@ -776,6 +785,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
     private handleReset(): void {
         if (this.phase !== "ready" || !this.draft) return;
+        this.showApiKey = false;
         this.draft = mergeSettings(DEFAULT_SETTINGS);
         this.clearStatus();
     }
@@ -787,6 +797,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
     private handleLoadExternal(): void {
         if (this.phase !== "ready" || !this.conflict) return;
+        this.showApiKey = false;
         this.draft = this.conflict.settings;
         this.baseline = this.conflict.settings;
         this.conflict = null;
@@ -795,6 +806,7 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
     private handleKeepLocal(): void {
         if (this.phase !== "ready" || !this.conflict || !this.draft) return;
+        this.showApiKey = false;
         this.baseline = this.conflict.settings;
         this.conflict = null;
         this.clearStatus();
@@ -933,13 +945,25 @@ export class ReadableCaptionsOptionsApp extends LitElement {
                 <p class="hint">${selectedProvider.modelHelpText}</p>
             </div>
 
+            ${keyed(settings.generationProvider, html`
             <div class="form-group">
                 <div class="form-label-row">
                     <label>API Key</label>
                     ${isApiKeySet ? html`<span style="font-size: 12px; color: var(--success);">● 已配置</span>` : html`<span style="font-size: 12px; color: var(--warning);">○ 未配置</span>`}
                 </div>
                 <div class="api-key-wrapper">
-                    <input class="form-control" type="${this.showApiKey ? 'text' : 'password'}" name="generationApiKey" .value=${selectedProfile.apiKey} @input=${this.handleGenerationApiKeyChange} placeholder="sk-..." />
+                    <input
+                        class="form-control api-key-input ${this.showApiKey ? "" : "masked"}"
+                        type="text"
+                        name=${`generationApiKey-${settings.generationProvider}`}
+                        data-setting="generationApiKey"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        .value=${live(selectedProfile.apiKey)}
+                        @input=${this.handleGenerationApiKeyChange}
+                        placeholder="sk-..."
+                    />
                     <button type="button" class="toggle-visibility-btn" @click=${this.toggleApiKeyVisibility} title="${this.showApiKey ? '隐藏' : '显示'}">
                         ${this.showApiKey
                 ? html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
@@ -954,15 +978,16 @@ export class ReadableCaptionsOptionsApp extends LitElement {
 
             <div class="form-group">
                 <label>总览模型</label>
-                <input class="form-control" type="text" data-task="overview" .value=${selectedProfile.models.overview} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${selectedProvider.modelPlaceholder} />
+                <input class="form-control" type="text" data-task="overview" .value=${live(selectedProfile.models.overview)} @input=${(event: Event) => this.handleGenerationModelChange("overview", event)} placeholder=${selectedProvider.modelPlaceholder} />
                 <p class="hint">用于生成 overview 总览。${selectedProvider.modelHelpText}</p>
             </div>
 
             <div class="form-group">
                 <label>精读模型</label>
-                <input class="form-control" type="text" data-task="intensive" .value=${selectedProfile.models.intensive} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${selectedProvider.modelPlaceholder} />
+                <input class="form-control" type="text" data-task="intensive" .value=${live(selectedProfile.models.intensive)} @input=${(event: Event) => this.handleGenerationModelChange("intensive", event)} placeholder=${selectedProvider.modelPlaceholder} />
                 <p class="hint">用于生成 intensive 精读稿。Markdown Note 暂时跟随精读模型。</p>
             </div>
+            `)}
 
             <div class="section-divider"></div>
 

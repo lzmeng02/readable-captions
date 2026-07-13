@@ -46,6 +46,12 @@ async function openGenerationTab(app: ReadableCaptionsOptionsApp): Promise<void>
     await settle(app);
 }
 
+function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
+    const input = app.shadowRoot!.querySelector<HTMLInputElement>('input[data-setting="generationApiKey"]');
+    expect(input, "provider API key input").toBeInstanceOf(HTMLInputElement);
+    return input!;
+}
+
 function providerButton(
     app: ReadableCaptionsOptionsApp,
     provider: "openai" | "deepseek",
@@ -103,7 +109,7 @@ function valueOf(app: ReadableCaptionsOptionsApp, selector: string): string {
 
 function findButton(app: ReadableCaptionsOptionsApp, text: string): HTMLButtonElement | undefined {
     return [...app.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? []]
-        .find((button) => button.textContent?.includes(text));
+        .find((button) => button.textContent?.includes(text) || button.title.includes(text));
 }
 
 beforeEach(() => {
@@ -119,29 +125,79 @@ afterEach(() => {
 });
 
 describe("Options provider profiles", () => {
+    it("replaces provider-specific controls and never exposes a password field", async () => {
+        const app = await mountLoadedOptions({
+            ...canonicalFixture(),
+            generationProviderSettings: {
+                openai: { apiKey: "", models: { overview: "", intensive: "" } },
+                deepseek: {
+                    apiKey: "ds-test-key",
+                    models: { overview: "ds-overview", intensive: "ds-intensive" },
+                },
+            },
+        });
+        await openGenerationTab(app);
+
+        const deepseekInput = apiKeyInput(app);
+        expect.soft(deepseekInput.type).toBe("text");
+        expect.soft(deepseekInput.name).toBe("generationApiKey-deepseek");
+        expect.soft(deepseekInput.autocomplete).toBe("off");
+        expect.soft(deepseekInput.classList).toContain("masked");
+
+        await selectProvider(app, "openai");
+        const openaiInput = apiKeyInput(app);
+        expect.soft(openaiInput).not.toBe(deepseekInput);
+        expect.soft(openaiInput.name).toBe("generationApiKey-openai");
+        expect.soft(openaiInput.value).toBe("");
+        expect(app.shadowRoot!.querySelector(".form-label-row")!.textContent).toContain("未配置");
+    });
+
+    it("hides a configured key again after changing providers", async () => {
+        const app = await mountLoadedOptions({
+            ...canonicalFixture(),
+            generationProviderSettings: {
+                openai: {
+                    apiKey: "oa-test-key",
+                    models: { overview: "gpt-test", intensive: "gpt-test" },
+                },
+                deepseek: {
+                    apiKey: "ds-test-key",
+                    models: { overview: "deepseek-test", intensive: "deepseek-test" },
+                },
+            },
+        });
+        await openGenerationTab(app);
+        findButton(app, "显示")!.click();
+        await settle(app);
+        expect(apiKeyInput(app).classList).not.toContain("masked");
+
+        await selectProvider(app, "openai");
+        expect(apiKeyInput(app).classList).toContain("masked");
+    });
+
     it("isolates API keys and models across repeated provider switches", async () => {
         const app = await mountLoadedOptions();
         await openGenerationTab(app);
         await selectProvider(app, "deepseek");
-        await inputValue(app, 'input[name="generationApiKey"]', "ds-test-key");
+        await inputValue(app, 'input[data-setting="generationApiKey"]', "ds-test-key");
         await inputValue(app, 'input[data-task="overview"]', "deepseek-overview");
         await inputValue(app, 'input[data-task="intensive"]', "deepseek-intensive");
 
         await selectProvider(app, "openai");
-        expect.soft(valueOf(app, 'input[name="generationApiKey"]')).toBe("");
+        expect.soft(valueOf(app, 'input[data-setting="generationApiKey"]')).toBe("");
         expect.soft(valueOf(app, 'input[data-task="overview"]')).toBe("");
         expect.soft(valueOf(app, 'input[data-task="intensive"]')).toBe("");
-        await inputValue(app, 'input[name="generationApiKey"]', "oa-test-key");
+        await inputValue(app, 'input[data-setting="generationApiKey"]', "oa-test-key");
         await inputValue(app, 'input[data-task="overview"]', "gpt-overview");
         await inputValue(app, 'input[data-task="intensive"]', "gpt-intensive");
 
         await selectProvider(app, "deepseek");
-        expect.soft(valueOf(app, 'input[name="generationApiKey"]')).toBe("ds-test-key");
+        expect.soft(valueOf(app, 'input[data-setting="generationApiKey"]')).toBe("ds-test-key");
         expect.soft(valueOf(app, 'input[data-task="overview"]')).toBe("deepseek-overview");
         expect.soft(valueOf(app, 'input[data-task="intensive"]')).toBe("deepseek-intensive");
 
         await selectProvider(app, "openai");
-        expect.soft(valueOf(app, 'input[name="generationApiKey"]')).toBe("oa-test-key");
+        expect.soft(valueOf(app, 'input[data-setting="generationApiKey"]')).toBe("oa-test-key");
         expect.soft(valueOf(app, 'input[data-task="overview"]')).toBe("gpt-overview");
         expect.soft(valueOf(app, 'input[data-task="intensive"]')).toBe("gpt-intensive");
 
@@ -168,7 +224,7 @@ describe("Options provider profiles", () => {
         const app = await mountLoadedOptions();
         await openGenerationTab(app);
 
-        await inputValue(app, 'input[name="generationApiKey"]', "   ");
+        await inputValue(app, 'input[data-setting="generationApiKey"]', "   ");
 
         const status = app.shadowRoot?.querySelector(".form-label-row")?.textContent ?? "";
         expect(status).toContain("未配置");

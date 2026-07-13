@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../../src/settings/defaults";
+import type { ExtensionSettings } from "../../../src/settings/types";
 
 const storageMocks = vi.hoisted(() => ({
     createSettingsWriteRevision: vi.fn(),
@@ -11,13 +12,31 @@ const storageMocks = vi.hoisted(() => ({
 vi.mock("../../../src/settings/storage", () => storageMocks);
 import { ReadableCaptionsOptionsApp } from "../../../src/options/index";
 
+type SettingsWatcher = (
+    settings: ExtensionSettings,
+    metadata: { revision: string | null },
+) => void;
+
+let watchedSettings: SettingsWatcher | undefined;
+
+async function settle(app: ReadableCaptionsOptionsApp): Promise<void> {
+    for (let index = 0; index < 4; index += 1) {
+        await Promise.resolve();
+        await app.updateComplete;
+    }
+}
+
 async function mountOptions(): Promise<ReadableCaptionsOptionsApp> {
     const app = new ReadableCaptionsOptionsApp();
     document.body.append(app);
-    await app.updateComplete;
-    await Promise.resolve();
-    await app.updateComplete;
+    await settle(app);
     return app;
+}
+
+function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
+    const input = app.shadowRoot!.querySelector<HTMLInputElement>('input[data-setting="generationApiKey"]');
+    expect(input, "provider API key input").toBeInstanceOf(HTMLInputElement);
+    return input!;
 }
 
 function change(control: HTMLInputElement | HTMLSelectElement, value: string | boolean): void {
@@ -33,13 +52,14 @@ function change(control: HTMLInputElement | HTMLSelectElement, value: string | b
 
 function clickByText(root: ShadowRoot, text: string): void {
     const element = [...root.querySelectorAll<HTMLElement>("button, .nav-item")]
-        .find((candidate) => candidate.textContent?.includes(text));
+        .find((candidate) => candidate.textContent?.includes(text) || candidate.title.includes(text));
     if (!element) throw new Error(`Missing control: ${text}`);
     element.click();
 }
 
 beforeEach(() => {
     document.body.replaceChildren();
+    watchedSettings = undefined;
     storageMocks.createSettingsWriteRevision.mockReset().mockReturnValue("live-controls-write-revision-001");
     storageMocks.getSettings.mockReset().mockResolvedValue({
         ...DEFAULT_SETTINGS,
@@ -49,11 +69,82 @@ beforeEach(() => {
         downloadFormat: "srt",
     });
     storageMocks.saveSettings.mockReset().mockImplementation(async (settings) => settings);
-    storageMocks.watchSettings.mockReset().mockReturnValue(vi.fn());
+    storageMocks.watchSettings.mockReset().mockImplementation((listener: SettingsWatcher) => {
+        watchedSettings = listener;
+        return vi.fn();
+    });
 });
 afterEach(() => document.body.replaceChildren());
 
 describe("Options live controls", () => {
+    it("masks the selected API key after reset", async () => {
+        storageMocks.getSettings.mockResolvedValueOnce({
+            ...DEFAULT_SETTINGS,
+            generationProviderSettings: {
+                ...DEFAULT_SETTINGS.generationProviderSettings,
+                deepseek: {
+                    apiKey: "ds-test-key",
+                    models: { overview: "deepseek-test", intensive: "deepseek-test" },
+                },
+            },
+        });
+        const app = await mountOptions();
+        const root = app.shadowRoot!;
+        clickByText(root, "AI 生成");
+        await settle(app);
+        clickByText(root, "显示");
+        await settle(app);
+        expect(apiKeyInput(app).classList).not.toContain("masked");
+
+        clickByText(root, "恢复默认");
+        await settle(app);
+
+        expect(apiKeyInput(app).classList).toContain("masked");
+    });
+
+    it("masks the selected API key after loading external settings", async () => {
+        storageMocks.getSettings.mockResolvedValueOnce({
+            ...DEFAULT_SETTINGS,
+            generationProviderSettings: {
+                ...DEFAULT_SETTINGS.generationProviderSettings,
+                deepseek: {
+                    apiKey: "ds-test-key",
+                    models: { overview: "deepseek-test", intensive: "deepseek-test" },
+                },
+            },
+        });
+        const app = await mountOptions();
+        const root = app.shadowRoot!;
+        clickByText(root, "AI 生成");
+        await settle(app);
+        clickByText(root, "显示");
+        await settle(app);
+        expect(apiKeyInput(app).classList).not.toContain("masked");
+
+        const input = apiKeyInput(app);
+        input.value = "local-test-key";
+        input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        await settle(app);
+        expect(watchedSettings, "watchSettings subscription").toBeTypeOf("function");
+        watchedSettings!({
+            ...DEFAULT_SETTINGS,
+            generationProviderSettings: {
+                ...DEFAULT_SETTINGS.generationProviderSettings,
+                deepseek: {
+                    apiKey: "external-test-key",
+                    models: { overview: "external-test", intensive: "external-test" },
+                },
+            },
+        }, { revision: "external-test-revision" });
+        await settle(app);
+
+        clickByText(root, "载入外部设置");
+        await settle(app);
+
+        expect.soft(apiKeyInput(app).value).toBe("external-test-key");
+        expect(apiKeyInput(app).classList).toContain("masked");
+    });
+
     it("reset updates the default-tab select and generation checkbox", async () => {
         const app = await mountOptions();
         const root = app.shadowRoot!;
