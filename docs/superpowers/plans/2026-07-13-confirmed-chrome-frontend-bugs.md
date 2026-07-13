@@ -372,7 +372,7 @@ git status --short
 
 Expected: every test passes; TypeScript and build exit 0; five files exist in `dist/`; status contains only intentional docs/source/tests and no generated files.
 
-- [ ] **Step 3: Request Superpowers whole-branch review**
+- [x] **Step 3: Request Superpowers whole-branch review**
 
 Generate a review package from base `d9ec2d6` to final HEAD. Fix every Critical/Important issue with a focused RED→GREEN cycle; record Minor findings. Re-run the complete verification after any fix.
 
@@ -383,7 +383,7 @@ git add -- docs/architecture.md docs/development.md docs/superpowers/plans/2026-
 git commit -m "docs: document Chrome frontend safeguards"
 ```
 
-- [ ] **Step 4b: Push the final reviewed branch (controller-owned)**
+- [x] **Step 4b: Push the final reviewed branch (controller-owned)**
 
 ```powershell
 git push -u origin fix/chrome-frontend-runtime
@@ -393,7 +393,7 @@ git push -u origin fix/chrome-frontend-runtime
 
 The controller already opened Draft PR #9 with base `fix/provider-settings-hardening` and head `fix/chrome-frontend-runtime`; do not recreate it or modify PR #8.
 
-- [ ] **Step 5b: Finalize the body and verify the existing Draft PR (controller-owned)**
+- [x] **Step 5b: Finalize the body and verify the existing Draft PR (controller-owned)**
 
 ```powershell
 gh pr view --repo lzmeng02/readable-captions --json url,isDraft,baseRefName,headRefName,mergeable
