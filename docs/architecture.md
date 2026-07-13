@@ -133,7 +133,7 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 - 原文和生成 Markdown 中可识别的时间戳会设置页面 `<video>.currentTime` 并尝试播放。
 - 生成 Markdown 先经 `marked` 转换，再由 DOMPurify 清洗，最后才传给 Lit 的 `unsafeHTML`。
 - 原文可复制为纯文本或带时间戳文本，可下载 TXT 或 SRT；Note 可复制或下载 `.md`。
-- 只有 `isCollapsed` 是 `panel-view.ts` 的 module-level 状态；`isMenuOpen`、`mode`、`uiLanguage`、生成状态和 Note drawer 状态都属于每次 `mountPanel()` 实例，reset 会关闭该实例的 More menu。
+- 只有 `isCollapsed` 是 `panel-view.ts` 的 module-level 状态；`isMenuOpen`、`mode`、`uiLanguage`、生成状态和 Note drawer 状态都属于每次 `mountPanel()` 实例。More menu 不依赖隐式重绘关闭：reset、外部 pointer 以及设置、Note、语言动作都会先把该实例的 `isMenuOpen` 显式转为 `false`，再按各自动作需要重绘；menu 关闭时 document pointer handler 会直接返回。
 - 流式 token 只为当前可见 task 调度 `requestAnimationFrame`；同一 frame 内的多个 token 合并成一次 Lit render。完成/错误立即 flush，tab 切换、reset、dispose 和其他同步 render 会取消旧 frame，隐藏 task 不因 token 重绘。
 - 标题提取只删除文档标题末尾的 `_哔哩哔哩_bilibili` 或 ` - 哔哩哔哩` suffix；`GPT-5`、`A-B-C` 等合法内部连字符保留。下载时仅用 `/[\\/:*?"<>|]/g` 把非法文件名字符替换为 `_`，生成文件再追加 `_overview`、`_intensive` 或 `_note`。
 
@@ -141,8 +141,9 @@ Public settings 有独立的 `pending | ready | error` readiness，不与字幕�
 
 - Panel 创建时先显示 `original`，并把 `generationEnabled` 设为 `false`、copy/download format 设为 `null`。原文和“设置”入口仍可用，但生成 tab、Note、复制和下载都以原生 `disabled` 或 handler guard fail closed。
 - 只有 `watchPublicSettings()` 送达第一个通过校验的真实值后，Panel 才应用配置的默认 tab，并开放该值允许的动作。
-- settings port 缺失、连接抛错、background 返回错误，或在第一个值前断开，都会进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不用硬编码默认值兜底。
-- port 在至少一个有效值之后断开时，public client 保留最后的 `ready` 值；后续生成仍会由 background 重新读取 canonical settings 并执行 `generationEnabled` gate。
+- settings port 缺失、连接抛错、background 返回错误，或在第一个值前/已经 `ready` 后断开，都会报告一次当前 outage 并让 Panel 进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不保留旧 `ready` 权限，也不用硬编码默认值兜底。
+- `watchPublicSettings()` 会为同一 outage 只保留一个 reconnect timer，以 100 ms 起步做指数退避，并把单次等待限制在最多 5000 ms；缺失 port、connect 抛错和 disconnect 都进入同一重连路径。connection generation 与 active-port identity 使旧 port 的迟到 message/disconnect 失效；unsubscribe 会清 timer、使 generation 失效并安全断开 active port。
+- 只有新 active port 送达通过校验的 settings snapshot 才结束 outage、把退避重置为 100 ms 并再次调用 `onSettings`；Panel 随后从 `error` 恢复为 `ready`，按这份 authoritative snapshot 恢复允许的动作。重连期间从不发布 defaults。
 - Background 为每个 public-settings port 保存 revision；live `watchSettings()` broadcast 会推进 revision，使该 port 尚未完成的初始 read success/error 失效，disconnect 则删除 port。这样较新的 live value 不会被旧 snapshot 或迟到的 read error 覆盖。
 - 后续 `generationEnabled` 关闭或 `generationSettingsKey` 改变都会清空已有生成状态；设置读取失败时同样清空。`dispose()` 才停止 long-lived settings watcher。
 
@@ -182,6 +183,9 @@ Background 对每个 start 先读取 canonical settings，并在任何 keepalive
 
 ### Provider 行为
 
+- Options 的 API-key control 刻意避开 password-manager/login semantics：它始终是 `type="text"`，使用 provider-specific `name="generationApiKey-<provider>"`，并设置 `autocomplete="off"`、`autocapitalize="off"`、`spellcheck="false"`；隐藏效果由 `.masked` 的 Chrome `-webkit-text-security` 提供，而不是 `type="password"`。
+- API key 与 Overview/Intensive model control 包在 `keyed(generationProvider, ...)` 中；切换 provider 会重建整组 credential/model DOM，而不是复用可能已被 Chrome Autofill 污染的节点。三个 value binding 都通过 Lit `live()` 比较 live DOM property 与 authoritative draft，因此即使模板值未变，也会纠正浏览器在渲染后写入的值。
+- reveal state 只属于当前 Options 状态，并在 provider 切换及 authoritative transition 后恢复隐藏：初始/重试 load、Reset、clean external refresh、“载入外部设置”和“保留当前编辑”都会设置 `showApiKey = false`。这不会删除或合并任何 persisted provider key。
 - `src/generation/provider-catalog.ts` 是 provider id、Options label/help/placeholder/default model 和 request builder 的单一 catalog；`GenerationProvider` 由 catalog id 推导，Options 直接遍历同一 catalog，不维护第二份 provider 列表。
 - `streamGenerationFromApi()` 先按 `generationProvider` 取得 catalog entry，再只读取 `generationProviderSettings[generationProvider]`。selected profile 的 key 为空会在 `fetch` 前报错；模型使用对应 task 的配置，`note` 复用 `intensive`，仅在 catalog entry 声明 `defaultModel` 时才做 request-time fallback。
 - endpoint、Authorization header 和 provider-specific body 由 selected entry 的 `buildRequest()` 产生。`ProviderRequest.streamDecoder` 必须经过 `satisfies Record<GenerationStreamDecoderId, ProviderStreamDecoder>` 的 exhaustive registry dispatch；当前唯一 adapter 是 `chat-completions-sse`，OpenAI 与 DeepSeek 共用它。扩展 decoder union 会在 adapter 未实现时产生 type error，不能只写一个 catalog 字段。
@@ -202,7 +206,7 @@ SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` �
 - `getSettings()`：background/options 解包 envelope 或 legacy raw object，再经 `mergeSettings()` 返回纯 `ExtensionSettings`。
 - `createSettingsWriteRevision()` / `saveSettings(settings, revision)`：Options 在每次写前生成 caller-known UUID；即使 settings 值相同，envelope revision 也不同，从而产生可关联的写入 provenance。
 - `watchSettings()`：background/options 监听 `chrome.storage.local` 中该 key 的变化，返回 canonical settings 与独立 `{ revision | null }` metadata，并提供 unsubscribe；legacy raw change 的 revision 是 `null`。
-- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`；连接/读取错误走显式 error callback。
+- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`；连接/读取错误和任意阶段的 disconnect 走显式 outage callback，并以有上限的指数退避重连，直到有效 snapshot 恢复 readiness 或 caller unsubscribe。
 
 Background 启动时调用 `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`，content script 不直接访问完整 storage。不要绕过这些封装直接调用 `chrome.storage.local`。
 
@@ -242,7 +246,7 @@ Options 使用 `loading | ready | saving | error` 状态机，而不是先放一
 - dirty 由 `JSON.stringify(mergeSettings(draft))` 与 baseline 比较得出。save 只允许在 `ready` 且无 conflict 时开始；保存期间整个 fieldset（含 save/reset）禁用，save 返回的 canonical value 成为新 baseline。save 失败则保留 draft、回到 `ready` 并显示错误。
 - clean form 收到外部 storage 更新会立即采用；dirty 或 saving form 保存最新 external value 为 conflict 并阻止 save。“载入外部设置”用 external value 同时替换 draft/baseline；“保留当前编辑”只把 baseline 移到 external value，因此 local draft 仍 dirty，下一次 save 是明确覆盖。
 - Options 在 `saveSettings()` 前创建 unique revision；只有 watcher metadata 中相同 revision 才是 own-save acknowledgement，canonical value equality 从不作为 provenance。save 已 resolve 但 watcher event 未到时，revision 保留在最多 8 项的 bounded set 中直到消费；迟到 acknowledgement 不会清除或替换已持有的较新 conflict。未来同值 external write 使用不同/null revision，因此 X/no-ack → Z → X 不会被吞掉；retained set 在 reload/disconnect 重置。
-- API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
+- API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft，同时通过 keyed DOM replacement、`live()` property binding 和 reveal reset 阻断浏览器残留值/显示状态跨 profile 延续。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
 
 ## 信任边界与外发数据
 

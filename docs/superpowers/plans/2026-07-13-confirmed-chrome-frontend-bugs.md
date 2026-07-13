@@ -32,7 +32,7 @@
 - Consumes: `ExtensionSettings.generationProviderSettings[provider]` and existing provider catalog entries.
 - Produces: `input[data-setting="generationApiKey"]` with provider-specific `name`, mount identity, masking, and controlled value.
 
-- [ ] **Step 1: Write the failing provider-DOM and visibility tests**
+- [x] **Step 1: Write the failing provider-DOM and visibility tests**
 
 Add a stable helper and regressions equivalent to:
 
@@ -85,7 +85,7 @@ it("hides a configured key again after changing providers", async () => {
 
 Update existing selectors from `input[name="generationApiKey"]` to `input[data-setting="generationApiKey"]`. Add reset/external-load assertions that the selected API field is masked after the authoritative draft changes.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -95,7 +95,7 @@ npm test -- tests/dom/options/options-provider-profiles.test.ts tests/dom/option
 
 Expected failures: current input is `type=password`, has the shared name, reuses the same element, lacks `autocomplete`, and reveal state survives provider changes.
 
-- [ ] **Step 3: Implement keyed, live, masked provider controls**
+- [x] **Step 3: Implement keyed, live, masked provider controls**
 
 Import the directives:
 
@@ -133,7 +133,7 @@ Render the provider-specific credential/model section through `keyed(settings.ge
 
 Bind provider model values with `live(selectedProfile.models.overview)` and `live(selectedProfile.models.intensive)` inside the same keyed template.
 
-- [ ] **Step 4: Run Options GREEN checks**
+- [x] **Step 4: Run Options GREEN checks**
 
 ```powershell
 npm test -- tests/dom/options/options-provider-profiles.test.ts tests/dom/options/options-live-controls.test.ts tests/dom/options/options-state.test.ts
@@ -142,7 +142,7 @@ npm exec tsc -- --noEmit --pretty false
 
 Expected: all Options tests pass and TypeScript exits 0.
 
-- [ ] **Step 5: Commit the Options fix**
+- [x] **Step 5: Commit the Options fix**
 
 ```powershell
 git add -- src/options/index.ts tests/dom/options/options-provider-profiles.test.ts tests/dom/options/options-live-controls.test.ts
@@ -161,7 +161,7 @@ git commit -m "fix: isolate provider credential controls"
 - Preserves: `watchPublicSettings(onSettings, onError): () => void`.
 - Produces: fail-closed outage notification, bounded reconnect attempts, recovery on valid settings, and deterministic unsubscribe cleanup.
 
-- [ ] **Step 1: Write failing reconnect lifecycle tests**
+- [x] **Step 1: Write failing reconnect lifecycle tests**
 
 Use fake timers and a queue of fake ports:
 
@@ -210,7 +210,7 @@ it("cancels a scheduled reconnect when unsubscribed", async () => {
 
 Also assert that a stale first port cannot publish settings after a replacement port is active, and that repeated connection failures do not publish defaults.
 
-- [ ] **Step 2: Run the public-client suite and verify RED**
+- [x] **Step 2: Run the public-client suite and verify RED**
 
 ```powershell
 npm test -- tests/unit/settings/public-client.test.ts
@@ -218,7 +218,7 @@ npm test -- tests/unit/settings/public-client.test.ts
 
 Expected: current client reports only a pre-first-value disconnect, never reconnects, and cannot recover.
 
-- [ ] **Step 3: Implement the reconnecting port state machine**
+- [x] **Step 3: Implement the reconnecting port state machine**
 
 Use constants and lifecycle state:
 
@@ -236,7 +236,7 @@ let stopped = false;
 
 `connect()` creates a new generation, attaches listeners that first verify both generation and port identity, and schedules another attempt on throw/missing port/disconnect. `scheduleReconnect(error)` calls `onError(error)` only once per outage, starts one timer, doubles the delay up to 5000 ms, and never publishes defaults. A valid settings message clears outage state, resets the delay, and calls `onSettings`. The returned cleanup increments generation, clears the timer, nulls and disconnects the active port, and makes all stale callbacks no-ops.
 
-- [ ] **Step 4: Run public settings and Panel readiness GREEN checks**
+- [x] **Step 4: Run public settings and Panel readiness GREEN checks**
 
 ```powershell
 npm test -- tests/unit/settings/public-client.test.ts tests/unit/background/background-app.test.ts tests/dom/panel/mount-settings-readiness.test.ts
@@ -245,7 +245,7 @@ npm exec tsc -- --noEmit --pretty false
 
 Expected: reconnect tests and existing fail-closed readiness tests pass.
 
-- [ ] **Step 5: Commit the port lifecycle fix**
+- [x] **Step 5: Commit the port lifecycle fix**
 
 ```powershell
 git add -- src/settings/public-client.ts tests/unit/settings/public-client.test.ts
@@ -265,7 +265,7 @@ git commit -m "fix: reconnect public settings ports"
 - Preserves: `PanelUiOptions.isMenuOpen` and `onMenuOpenChange(next)`.
 - Produces: explicit close transitions for outside pointer and menu actions.
 
-- [ ] **Step 1: Write failing menu-state tests**
+- [x] **Step 1: Write failing menu-state tests**
 
 Add regressions equivalent to:
 
@@ -296,7 +296,7 @@ it("closes the More menu when language is changed", () => {
 });
 ```
 
-- [ ] **Step 2: Run the Panel test and verify RED**
+- [x] **Step 2: Run the Panel test and verify RED**
 
 ```powershell
 npm test -- tests/dom/panel/mount.test.ts -t "More menu|language"
@@ -304,7 +304,7 @@ npm test -- tests/dom/panel/mount.test.ts -t "More menu|language"
 
 Expected: outside pointer and language action leave the menu open.
 
-- [ ] **Step 3: Implement explicit close transitions**
+- [x] **Step 3: Implement explicit close transitions**
 
 In `mount.ts`, avoid work while closed and clear state before rendering:
 
@@ -331,7 +331,7 @@ const handleLangClick = (event: Event) => {
 };
 ```
 
-- [ ] **Step 4: Run Panel GREEN checks and commit**
+- [x] **Step 4: Run Panel GREEN checks and commit**
 
 ```powershell
 npm test -- tests/dom/panel/mount.test.ts tests/dom/panel/mount-generation-render.test.ts tests/dom/panel/mount-settings-readiness.test.ts
@@ -354,13 +354,13 @@ Expected: all focused Panel tests pass and TypeScript exits 0.
 
 **Interfaces:**
 - Documents the provider-specific control contract and reconnecting public-settings lifecycle.
-- Publishes a new Draft PR with base `fix/provider-settings-hardening`.
+- Uses the existing Draft PR #9 with base `fix/provider-settings-hardening`; the controller owns final push, whole-branch review, and PR-body refresh.
 
-- [ ] **Step 1: Update canonical docs and checklist status**
+- [x] **Step 1: Update canonical docs and checklist status**
 
 Document that API-key controls avoid password-manager semantics, provider changes recreate the control, reveal state is provider-transition-safe, and public settings reconnect/fail closed after MV3 disconnects. Record Chrome/Bilibili/authenticated smoke as unverified rather than passed. Mark only completed plan checkboxes.
 
-- [ ] **Step 2: Run fresh complete verification**
+- [x] **Step 2: Run fresh complete verification**
 
 ```powershell
 npm test
@@ -376,18 +376,26 @@ Expected: every test passes; TypeScript and build exit 0; five files exist in `d
 
 Generate a review package from base `d9ec2d6` to final HEAD. Fix every Critical/Important issue with a focused RED→GREEN cycle; record Minor findings. Re-run the complete verification after any fix.
 
-- [ ] **Step 4: Commit docs and push the new branch**
+- [x] **Step 4a: Commit the docs update**
 
 ```powershell
 git add -- docs/architecture.md docs/development.md docs/superpowers/plans/2026-07-13-confirmed-chrome-frontend-bugs.md
 git commit -m "docs: document Chrome frontend safeguards"
+```
+
+- [ ] **Step 4b: Push the final reviewed branch (controller-owned)**
+
+```powershell
 git push -u origin fix/chrome-frontend-runtime
 ```
 
-- [ ] **Step 5: Open and verify the new Draft PR**
+- [x] **Step 5a: Open the new Draft PR**
+
+The controller already opened Draft PR #9 with base `fix/provider-settings-hardening` and head `fix/chrome-frontend-runtime`; do not recreate it or modify PR #8.
+
+- [ ] **Step 5b: Finalize the body and verify the existing Draft PR (controller-owned)**
 
 ```powershell
-gh pr create --draft --repo lzmeng02/readable-captions --base fix/provider-settings-hardening --head fix/chrome-frontend-runtime --title "fix: harden Chrome frontend state" --body-file .superpowers/sdd/chrome-frontend-pr-body.md
 gh pr view --repo lzmeng02/readable-captions --json url,isDraft,baseRefName,headRefName,mergeable
 ```
 
