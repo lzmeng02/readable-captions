@@ -47,7 +47,9 @@ async function openGenerationTab(app: ReadableCaptionsOptionsApp): Promise<void>
 }
 
 function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
-    const input = app.shadowRoot!.querySelector<HTMLInputElement>('input[data-setting="generationApiKey"]');
+    const input = app.shadowRoot!.querySelector<HTMLInputElement>(
+        'input[data-setting="generationApiKey"], input[name="generationApiKey"]',
+    );
     expect(input, "provider API key input").toBeInstanceOf(HTMLInputElement);
     return input!;
 }
@@ -86,6 +88,7 @@ function modelInput(
 }
 
 function inputControl(app: ReadableCaptionsOptionsApp, selector: string): HTMLInputElement | undefined {
+    if (selector === 'input[data-setting="generationApiKey"]') return apiKeyInput(app);
     if (selector === 'input[data-task="overview"]') return modelInput(app, "overview");
     if (selector === 'input[data-task="intensive"]') return modelInput(app, "intensive");
     return app.shadowRoot?.querySelector<HTMLInputElement>(selector) ?? undefined;
@@ -139,6 +142,7 @@ describe("Options provider profiles", () => {
         await openGenerationTab(app);
 
         const deepseekInput = apiKeyInput(app);
+        expect.soft(deepseekInput.dataset.setting).toBe("generationApiKey");
         expect.soft(deepseekInput.type).toBe("text");
         expect.soft(deepseekInput.name).toBe("generationApiKey-deepseek");
         expect.soft(deepseekInput.autocomplete).toBe("off");
@@ -146,6 +150,7 @@ describe("Options provider profiles", () => {
 
         await selectProvider(app, "openai");
         const openaiInput = apiKeyInput(app);
+        expect.soft(openaiInput.dataset.setting).toBe("generationApiKey");
         expect.soft(openaiInput).not.toBe(deepseekInput);
         expect.soft(openaiInput.name).toBe("generationApiKey-openai");
         expect.soft(openaiInput.value).toBe("");

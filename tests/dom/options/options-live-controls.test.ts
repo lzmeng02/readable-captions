@@ -34,7 +34,9 @@ async function mountOptions(): Promise<ReadableCaptionsOptionsApp> {
 }
 
 function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
-    const input = app.shadowRoot!.querySelector<HTMLInputElement>('input[data-setting="generationApiKey"]');
+    const input = app.shadowRoot!.querySelector<HTMLInputElement>(
+        'input[data-setting="generationApiKey"], input[name="generationApiKey"]',
+    );
     expect(input, "provider API key input").toBeInstanceOf(HTMLInputElement);
     return input!;
 }
