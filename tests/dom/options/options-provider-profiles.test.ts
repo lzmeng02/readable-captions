@@ -54,6 +54,19 @@ function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
     return input!;
 }
 
+function expectApiKeyBrowserContract(
+    input: HTMLInputElement,
+    provider: "openai" | "deepseek",
+): void {
+    expect.soft(input.dataset.setting).toBe("generationApiKey");
+    expect.soft(input.type).toBe("text");
+    expect.soft(input.name).toBe(`generationApiKey-${provider}`);
+    expect.soft(input.autocomplete).toBe("off");
+    expect.soft(input.getAttribute("autocapitalize")).toBe("off");
+    expect.soft(input.getAttribute("spellcheck")).toBe("false");
+    expect.soft(input.classList).toContain("masked");
+}
+
 function providerButton(
     app: ReadableCaptionsOptionsApp,
     provider: "openai" | "deepseek",
@@ -142,18 +155,26 @@ describe("Options provider profiles", () => {
         await openGenerationTab(app);
 
         const deepseekInput = apiKeyInput(app);
-        expect.soft(deepseekInput.dataset.setting).toBe("generationApiKey");
-        expect.soft(deepseekInput.type).toBe("text");
-        expect.soft(deepseekInput.name).toBe("generationApiKey-deepseek");
-        expect.soft(deepseekInput.autocomplete).toBe("off");
-        expect.soft(deepseekInput.classList).toContain("masked");
+        const deepseekOverview = modelInput(app, "overview");
+        const deepseekIntensive = modelInput(app, "intensive");
+        expect(deepseekOverview, "deepseek overview model input").toBeInstanceOf(HTMLInputElement);
+        expect(deepseekIntensive, "deepseek intensive model input").toBeInstanceOf(HTMLInputElement);
+        expectApiKeyBrowserContract(deepseekInput, "deepseek");
 
         await selectProvider(app, "openai");
         const openaiInput = apiKeyInput(app);
-        expect.soft(openaiInput.dataset.setting).toBe("generationApiKey");
+        const openaiOverview = modelInput(app, "overview");
+        const openaiIntensive = modelInput(app, "intensive");
+        expect(openaiOverview, "openai overview model input").toBeInstanceOf(HTMLInputElement);
+        expect(openaiIntensive, "openai intensive model input").toBeInstanceOf(HTMLInputElement);
         expect.soft(openaiInput).not.toBe(deepseekInput);
-        expect.soft(openaiInput.name).toBe("generationApiKey-openai");
+        expect.soft(openaiOverview).not.toBe(deepseekOverview);
+        expect.soft(openaiIntensive).not.toBe(deepseekIntensive);
+        expectApiKeyBrowserContract(openaiInput, "openai");
         expect.soft(openaiInput.value).toBe("");
+        expect.soft(openaiOverview!.value).toBe("");
+        expect.soft(openaiIntensive!.value).toBe("");
+        expect.soft(app.shadowRoot!.querySelector('input[type="password"]')).toBeNull();
         expect(app.shadowRoot!.querySelector(".form-label-row")!.textContent).toContain("未配置");
     });
 

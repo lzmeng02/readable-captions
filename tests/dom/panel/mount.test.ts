@@ -236,6 +236,25 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
+    it("returns before reading the pointer path while the More menu is closed", () => {
+        const { host, handle } = mountReadyPanel();
+        const pointerDown = new Event("pointerdown", { bubbles: true, composed: true });
+        const composedPath = vi.spyOn(pointerDown, "composedPath").mockImplementation(() => {
+            throw new Error("closed More menu must not read the pointer path");
+        });
+
+        try {
+            expect(moreMenu(host)).toBeNull();
+
+            document.body.dispatchEvent(pointerDown);
+
+            expect(composedPath).not.toHaveBeenCalled();
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
     it("closes an open More menu on an outside pointer", () => {
         const { host, handle } = mountReadyPanel();
 

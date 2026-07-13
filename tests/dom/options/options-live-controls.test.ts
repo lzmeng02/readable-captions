@@ -41,6 +41,15 @@ function apiKeyInput(app: ReadableCaptionsOptionsApp): HTMLInputElement {
     return input!;
 }
 
+function modelInput(
+    app: ReadableCaptionsOptionsApp,
+    task: "overview" | "intensive",
+): HTMLInputElement {
+    const input = app.shadowRoot!.querySelector<HTMLInputElement>(`input[data-task="${task}"]`);
+    expect(input, `${task} model input`).toBeInstanceOf(HTMLInputElement);
+    return input!;
+}
+
 function change(control: HTMLInputElement | HTMLSelectElement, value: string | boolean): void {
     if (control instanceof HTMLInputElement) {
         control.checked = Boolean(value);
@@ -145,6 +154,47 @@ describe("Options live controls", () => {
 
         expect.soft(apiKeyInput(app).value).toBe("external-test-key");
         expect(apiKeyInput(app).classList).toContain("masked");
+    });
+
+    it("restores provider values after an unrelated rerender without input events", async () => {
+        storageMocks.getSettings.mockResolvedValueOnce({
+            ...DEFAULT_SETTINGS,
+            generationProvider: "deepseek",
+            generationProviderSettings: {
+                ...DEFAULT_SETTINGS.generationProviderSettings,
+                deepseek: {
+                    apiKey: "ds-live-test-key",
+                    models: {
+                        overview: "deepseek-live-overview",
+                        intensive: "deepseek-live-intensive",
+                    },
+                },
+            },
+        });
+        const app = await mountOptions();
+        const root = app.shadowRoot!;
+        clickByText(root, "AI");
+        await settle(app);
+        const apiKey = apiKeyInput(app);
+        const overviewModel = modelInput(app, "overview");
+        const intensiveModel = modelInput(app, "intensive");
+
+        apiKey.value = "browser-filled-fake-key";
+        overviewModel.value = "browser-filled-overview";
+        intensiveModel.value = "browser-filled-intensive";
+
+        const prompt = root.querySelector<HTMLTextAreaElement>("textarea.form-control");
+        expect(prompt, "unrelated prompt control").toBeInstanceOf(HTMLTextAreaElement);
+        prompt!.value = "unrelated prompt rerender";
+        prompt!.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        await settle(app);
+
+        expect.soft(apiKeyInput(app)).toBe(apiKey);
+        expect.soft(modelInput(app, "overview")).toBe(overviewModel);
+        expect.soft(modelInput(app, "intensive")).toBe(intensiveModel);
+        expect.soft(apiKey.value).toBe("ds-live-test-key");
+        expect.soft(overviewModel.value).toBe("deepseek-live-overview");
+        expect(intensiveModel.value).toBe("deepseek-live-intensive");
     });
 
     it("reset updates the default-tab select and generation checkbox", async () => {

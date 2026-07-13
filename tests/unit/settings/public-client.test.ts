@@ -22,23 +22,43 @@ describe("watchPublicSettings", () => {
         stop();
     });
 
-    it("reports a background settings read failure", () => {
+    it("recovers on the retained port after a background read failure", async () => {
+        vi.useFakeTimers();
         const fake = createFakeRuntimePort(PUBLIC_SETTINGS_PORT);
-        vi.stubGlobal("chrome", { runtime: { connect: vi.fn(() => fake.port) } });
-        const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        const connect = vi.fn(() => fake.port);
+        vi.stubGlobal("chrome", { runtime: { connect } });
         const onSettings = vi.fn();
         const onError = vi.fn();
+        const stop = watchPublicSettings(onSettings, onError);
 
         try {
-            watchPublicSettings(onSettings, onError);
             fake.emitMessage({ type: "error", message: "settings unavailable" });
 
             expect(onSettings).not.toHaveBeenCalled();
-            expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+            expect(onError).toHaveBeenCalledOnce();
+            expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({
                 message: "settings unavailable",
             }));
+            expect.soft(connect).toHaveBeenCalledOnce();
+            expect(vi.getTimerCount()).toBe(0);
+
+            await vi.advanceTimersByTimeAsync(5000);
+            expect(connect).toHaveBeenCalledOnce();
+
+            const recovered = { ...DEFAULT_PUBLIC_SETTINGS, generationEnabled: false };
+            fake.emitMessage({ type: "settings", settings: recovered });
+            expect(onSettings).toHaveBeenCalledOnce();
+            expect(onSettings).toHaveBeenLastCalledWith(recovered);
+
+            fake.emitMessage({ type: "error", message: "settings unavailable again" });
+            expect(onError).toHaveBeenCalledTimes(2);
+            expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({
+                message: "settings unavailable again",
+            }));
+            expect.soft(connect).toHaveBeenCalledOnce();
+            expect(vi.getTimerCount()).toBe(0);
         } finally {
-            consoleError.mockRestore();
+            stop();
         }
     });
 
