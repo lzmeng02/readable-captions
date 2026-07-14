@@ -116,6 +116,18 @@ function moreMenu(host: HTMLElement): HTMLElement | null {
     return host.shadowRoot?.querySelector<HTMLElement>(".overflow-menu") ?? null;
 }
 
+function panelRoot(host: HTMLElement): HTMLElement {
+    const panel = host.shadowRoot?.querySelector<HTMLElement>(".panel");
+    if (!panel) throw new Error("Missing panel root");
+    return panel;
+}
+
+function toggleCollapse(host: HTMLElement): void {
+    const control = host.shadowRoot?.querySelector<HTMLElement>(".title-area");
+    if (!control) throw new Error("Missing collapse control");
+    control.click();
+}
+
 function mountReadyPanel(): { host: HTMLElement; handle: PanelHandle } {
     const host = document.createElement("section");
     document.body.append(host);
@@ -231,6 +243,80 @@ describe("mountPanel lifecycle", () => {
             handle.reset({ transcript: null, source: "none", status: "loading" });
 
             expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("restores expanded presentation state on reset", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            expect(panelRoot(host).classList).toContain("collapsed");
+            handle.reset({ transcript: null, source: "none", status: "loading" });
+            expect(panelRoot(host).classList).not.toContain("collapsed");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("starts a remounted panel expanded after the previous panel was collapsed", () => {
+        const first = mountReadyPanel();
+        toggleCollapse(first.host);
+        first.handle.dispose();
+        first.host.remove();
+
+        const second = mountReadyPanel();
+        try {
+            expect(panelRoot(second.host).classList).not.toContain("collapsed");
+        } finally {
+            second.handle.dispose();
+        }
+    });
+
+    it("keeps collapse state isolated between mounted panels", () => {
+        const first = mountReadyPanel();
+        const second = mountReadyPanel();
+        try {
+            toggleCollapse(first.host);
+            second.handle.updateData({
+                transcript: [{ from: 0, to: 1, content: "second rerender" }],
+                source: "human_view",
+                status: "ready",
+            });
+            expect(panelRoot(first.host).classList).toContain("collapsed");
+            expect(panelRoot(second.host).classList).not.toContain("collapsed");
+        } finally {
+            first.handle.dispose();
+            second.handle.dispose();
+        }
+    });
+
+    it("preserves collapse state while the same panel receives data updates", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            handle.updateData({
+                transcript: [{ from: 0, to: 1, content: "updated" }],
+                source: "human_view",
+                status: "ready",
+            });
+            expect(panelRoot(host).classList).toContain("collapsed");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("releases panel overflow while More is open in collapsed state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            clickAction(host, "更多");
+            expect(panelRoot(host).classList).toContain("collapsed");
+            expect(panelRoot(host).classList).toContain("menu-open");
+            expect(moreMenu(host)).not.toBeNull();
+            expect(host.shadowRoot?.querySelector("style[data-rc]")?.textContent)
+                .toMatch(/\.panel\.menu-open\s*\{[^}]*overflow:\s*visible/s);
         } finally {
             handle.dispose();
         }

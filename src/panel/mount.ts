@@ -104,6 +104,7 @@ export function mountPanel(
     let isDisposed = false;
     let isNoteOpen = false;
     let isMenuOpen = false;
+    let isCollapsed = false;
     let hasLoadedSettings = false;
     let copyFormat: PublicExtensionSettings["copyFormat"] | null = null;
     let downloadFormat: PublicExtensionSettings["downloadFormat"] | null = null;
@@ -407,6 +408,10 @@ export function mountPanel(
                 generationEnabled,
                 settingsStatus,
                 settingsError,
+                isCollapsed,
+                onCollapsedChange: (nextIsCollapsed) => {
+                    isCollapsed = nextIsCollapsed;
+                },
                 isMenuOpen,
                 onMenuOpenChange: (nextIsMenuOpen) => {
                     isMenuOpen = nextIsMenuOpen;
@@ -551,6 +556,7 @@ export function mountPanel(
             hasUserSelectedMode = false;
             isNoteOpen = false;
             isMenuOpen = false;
+            isCollapsed = false;
             renderPanel();
         },
         dispose,

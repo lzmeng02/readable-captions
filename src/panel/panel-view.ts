@@ -26,11 +26,11 @@ export type PanelUiOptions = {
     generationEnabled: boolean;
     settingsStatus: PublicSettingsStatus;
     settingsError: string | null;
+    isCollapsed: boolean;
+    onCollapsedChange: (isCollapsed: boolean) => void;
     isMenuOpen: boolean;
     onMenuOpenChange: (isOpen: boolean) => void;
 };
-
-let isCollapsed = false;
 
 export function panelTemplate(
     mode: Mode,
@@ -51,6 +51,8 @@ export function panelTemplate(
         generationEnabled: false,
         settingsStatus: "pending",
         settingsError: null,
+        isCollapsed: false,
+        onCollapsedChange: () => undefined,
         isMenuOpen: false,
         onMenuOpenChange: () => undefined,
     },
@@ -58,10 +60,11 @@ export function panelTemplate(
 ) {
     const generationEnabled = uiOptions.generationEnabled;
     const settingsReady = uiOptions.settingsStatus === "ready";
+    const isCollapsed = uiOptions.isCollapsed;
     const isMenuOpen = uiOptions.isMenuOpen;
 
     const toggleCollapse = () => {
-        isCollapsed = !isCollapsed;
+        uiOptions.onCollapsedChange(!isCollapsed);
         setMode(mode);
     };
 
@@ -485,7 +488,7 @@ export function panelTemplate(
     };
 
     return html`
-        <div class="panel ${isCollapsed ? "collapsed" : ""}">
+        <div class="panel ${isCollapsed ? "collapsed" : ""} ${isMenuOpen ? "menu-open" : ""}">
             <header class="header">
                 <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? (currentLang === "zh" ? "点击展开面板" : "Click to expand") : (currentLang === "zh" ? "点击收起面板" : "Click to collapse")}>
                     <span class="title">${currentLang === "zh" ? "可读字幕" : "Readable Captions"}</span>
@@ -574,6 +577,10 @@ export const panelStyles = css`
         overflow: hidden;
         color: #18191c;
         position: relative;
+    }
+
+    .panel.menu-open {
+        overflow: visible;
     }
 
     .panel.collapsed {
