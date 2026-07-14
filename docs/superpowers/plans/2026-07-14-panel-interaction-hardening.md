@@ -983,7 +983,7 @@ Fix every Critical/Important finding with a focused RED→GREEN cycle and rerun 
 
 The whole-diff review found one per-instance outside-pointer identity gap. Commit `f503540` added a two-Panel/page-decoy RED→GREEN regression, switched the document listener from shared-class matching to this Shadow Root's wrapper identity, updated the manual-smoke contract, and passed re-review with no remaining Critical or Important findings.
 
-- [ ] **Step 6: Push and refresh Draft PR #9**
+- [x] **Step 6: Push and refresh Draft PR #9**
 
 ```powershell
 git status --short --branch
@@ -992,3 +992,5 @@ git push origin fix/chrome-frontend-runtime
 ```
 
 Update the PR body with the four defects, exact automated results, explicit non-gating unverified Chrome/Bilibili/provider status, and the residual external ancestor/viewport layout limitation. Do not mark ready until no Critical/Important review finding remains.
+
+The verified branch was pushed and Draft PR #9 was refreshed with the final 233/233 result, build artifacts, review verdict, tradeoffs, and explicit non-gating smoke limitations. The PR remains Draft and stacked on PR #8; GitHub reports the current stack as mergeable/clean.
