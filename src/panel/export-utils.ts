@@ -80,15 +80,19 @@ function fallbackCopyText(content: string): void {
     const selection = document.getSelection();
     const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
 
+    let copied = false;
     document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const copied = document.execCommand("copy");
-    document.body.removeChild(textarea);
 
-    if (previousRange && selection) {
-        selection.removeAllRanges();
-        selection.addRange(previousRange);
+    try {
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand("copy");
+    } finally {
+        textarea.remove();
+        if (previousRange && selection) {
+            selection.removeAllRanges();
+            selection.addRange(previousRange);
+        }
     }
 
     if (!copied) {
@@ -106,11 +110,16 @@ function downloadTextFile(content: string, title: string, extension: string, mim
     a.href = url;
     a.download = `${safeTitle}.${extension}`;
     a.rel = "noopener";
-    a.click();
+    document.body.appendChild(a);
 
-    window.setTimeout(() => {
-        URL.revokeObjectURL(url);
-    }, 30000);
+    try {
+        a.click();
+    } finally {
+        a.remove();
+        window.setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 30000);
+    }
 }
 
 export function downloadTranscript(transcript: Transcript, format: DownloadFormat, title: string): void {

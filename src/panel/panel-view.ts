@@ -6,6 +6,10 @@ import type { PanelData, SubtitleSelectionUiState } from "./types";
 
 export type Mode = "overview" | "intensive" | "original";
 export type PublicSettingsStatus = "pending" | "ready" | "error";
+export type PanelAction = "copy" | "download";
+export type ActionFeedback =
+    | { action: PanelAction; status: "success" | "error" }
+    | null;
 
 export type GenerationUiState = {
     isGenerating: boolean;
@@ -26,11 +30,12 @@ export type PanelUiOptions = {
     generationEnabled: boolean;
     settingsStatus: PublicSettingsStatus;
     settingsError: string | null;
+    actionFeedback: ActionFeedback;
+    isCollapsed: boolean;
+    onCollapsedChange: (isCollapsed: boolean) => void;
     isMenuOpen: boolean;
     onMenuOpenChange: (isOpen: boolean) => void;
 };
-
-let isCollapsed = false;
 
 export function panelTemplate(
     mode: Mode,
@@ -51,6 +56,9 @@ export function panelTemplate(
         generationEnabled: false,
         settingsStatus: "pending",
         settingsError: null,
+        actionFeedback: null,
+        isCollapsed: false,
+        onCollapsedChange: () => undefined,
         isMenuOpen: false,
         onMenuOpenChange: () => undefined,
     },
@@ -58,10 +66,20 @@ export function panelTemplate(
 ) {
     const generationEnabled = uiOptions.generationEnabled;
     const settingsReady = uiOptions.settingsStatus === "ready";
+    const isCollapsed = uiOptions.isCollapsed;
     const isMenuOpen = uiOptions.isMenuOpen;
+    const panelVisibleName = currentLang === "zh"
+        ? "可读字幕 Readable Captions"
+        : "Readable Captions";
+    const collapseAction = isCollapsed
+        ? (currentLang === "zh" ? "展开面板" : "Expand panel")
+        : (currentLang === "zh" ? "收起面板" : "Collapse panel");
+    const collapseLabel = currentLang === "zh"
+        ? `${panelVisibleName}，${collapseAction}`
+        : `${panelVisibleName}, ${collapseAction}`;
 
     const toggleCollapse = () => {
-        isCollapsed = !isCollapsed;
+        uiOptions.onCollapsedChange(!isCollapsed);
         setMode(mode);
     };
 
@@ -86,6 +104,8 @@ export function panelTemplate(
 
     const handleLangClick = (event: Event) => {
         event.stopPropagation();
+        uiOptions.onMenuOpenChange(false);
+        setMode(mode);
         onLangClick?.();
     };
 
@@ -98,12 +118,10 @@ export function panelTemplate(
         noteState?.onOpen();
     };
 
-    const handleActionClick = (event: Event, action?: () => void | Promise<void>) => {
+    const invokeAction = (event: Event, action?: () => void | Promise<void>) => {
         event.preventDefault();
         event.stopPropagation();
-        Promise.resolve(action?.()).catch((err) => {
-            console.error("Readable Captions action failed", err);
-        });
+        action?.();
     };
 
     const tab = (id: Mode, label: string) => {
@@ -426,8 +444,8 @@ export function panelTemplate(
             if (noteState.text) {
                 return html`
                     <div class="note-actions">
-                        <button class="note-action-btn primary" @click=${(event: Event) => handleActionClick(event, noteState.onCopy)}>${currentLang === "zh" ? "复制 Markdown" : "Copy Markdown"}</button>
-                        <button class="note-action-btn" @click=${(event: Event) => handleActionClick(event, noteState.onDownload)}>${currentLang === "zh" ? "下载 .md" : "Download .md"}</button>
+                        <button class="note-action-btn primary" @click=${(event: Event) => invokeAction(event, noteState.onCopy)}>${currentLang === "zh" ? "复制 Markdown" : "Copy Markdown"}</button>
+                        <button class="note-action-btn" @click=${(event: Event) => invokeAction(event, noteState.onDownload)}>${currentLang === "zh" ? "下载 .md" : "Download .md"}</button>
                     </div>
                     <div class="note-preview markdown-body" @click=${handleMarkdownClick}>${renderMarkdown(noteState.text)}</div>
                 `;
@@ -444,8 +462,14 @@ export function panelTemplate(
             <section class="note-drawer">
                 <div class="note-header">
                     <h3>${currentLang === "zh" ? "Markdown Note" : "Markdown Note"}</h3>
-                    <button class="note-close" @click=${noteState.onClose} title="${currentLang === "zh" ? "关闭" : "Close"}">
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <button
+                        type="button"
+                        class="note-close"
+                        @click=${noteState.onClose}
+                        title="${currentLang === "zh" ? "关闭 Markdown Note" : "Close Markdown Note"}"
+                        aria-label="${currentLang === "zh" ? "关闭 Markdown Note" : "Close Markdown Note"}"
+                    >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
                 ${noteBody()}
@@ -482,39 +506,65 @@ export function panelTemplate(
         return nothing;
     };
 
+    const renderActionFeedback = () => {
+        const feedback = uiOptions.actionFeedback;
+        if (!feedback) return nothing;
+        const message = feedback.action === "copy"
+            ? (feedback.status === "success"
+                ? (currentLang === "zh" ? "已复制" : "Copied")
+                : (currentLang === "zh" ? "复制失败，请重试" : "Copy failed. Please try again."))
+            : (feedback.status === "success"
+                ? (currentLang === "zh" ? "已开始下载" : "Download started")
+                : (currentLang === "zh" ? "下载失败，请重试" : "Download failed. Please try again."));
+
+        return html`
+            <div
+                class="action-feedback ${feedback.status}"
+                role=${feedback.status === "error" ? "alert" : "status"}
+            >${message}</div>
+        `;
+    };
+
     return html`
-        <div class="panel ${isCollapsed ? "collapsed" : ""}">
+        <div class="panel ${isCollapsed ? "collapsed" : ""} ${isMenuOpen ? "menu-open" : ""}">
             <header class="header">
-                <div class="title-area" @click=${toggleCollapse} title=${isCollapsed ? (currentLang === "zh" ? "点击展开面板" : "Click to expand") : (currentLang === "zh" ? "点击收起面板" : "Click to collapse")}>
+                <button
+                    type="button"
+                    class="title-area"
+                    title=${collapseLabel}
+                    aria-label=${collapseLabel}
+                    aria-expanded=${String(!isCollapsed)}
+                    @click=${toggleCollapse}
+                >
                     <span class="title">${currentLang === "zh" ? "可读字幕" : "Readable Captions"}</span>
                     <span class="sub-title">${currentLang === "zh" ? "Readable Captions" : ""}</span>
-                </div>
+                </button>
 
                 <div class="actions">
-                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => handleActionClick(event, onDownload)}>
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <button type="button" class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" aria-label="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => invokeAction(event, onDownload)}>
+                        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => handleActionClick(event, onCopy)}>
-                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <button type="button" class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" aria-label="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => invokeAction(event, onCopy)}>
+                        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
 
                     <div class="more-actions-wrapper">
-                        <button class="icon-btn ${isMenuOpen ? "active" : ""}" title="${currentLang === "zh" ? "更多" : "More"}" @click=${toggleMenu}>
-                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                        <button type="button" class="icon-btn ${isMenuOpen ? "active" : ""}" title="${currentLang === "zh" ? "更多" : "More"}" aria-label="${currentLang === "zh" ? "更多" : "More"}" aria-expanded=${String(isMenuOpen)} aria-controls="rc-overflow-menu" @click=${toggleMenu}>
+                            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
                         </button>
 
                         ${isMenuOpen ? html`
                             <div class="menu-overlay" @click=${closeMenu}></div>
-                            <div class="overflow-menu">
-                                <button class="overflow-item" ?disabled=${!settingsReady} @click=${handleNoteClick}>
+                            <div id="rc-overflow-menu" class="overflow-menu">
+                                <button type="button" class="overflow-item" ?disabled=${!settingsReady} @click=${handleNoteClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                                     <span class="overflow-item-label">${currentLang === "zh" ? "导出 Markdown Note" : "Export Markdown Note"}</span>
                                 </button>
-                                <button class="overflow-item" @click=${handleSettingsClick}>
+                                <button type="button" class="overflow-item" @click=${handleSettingsClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                                     <span class="overflow-item-label">${currentLang === "zh" ? "设置" : "Settings"}</span>
                                 </button>
-                                <button class="overflow-item" @click=${handleLangClick}>
+                                <button type="button" class="overflow-item" @click=${handleLangClick}>
                                     <svg class="overflow-item-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                                     <span class="overflow-item-label">${currentLang === "zh" ? "语言：中文" : "Lang: English"}</span>
                                 </button>
@@ -525,6 +575,7 @@ export function panelTemplate(
             </header>
 
             ${renderSettingsStatus()}
+            ${renderActionFeedback()}
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
@@ -574,6 +625,10 @@ export const panelStyles = css`
         position: relative;
     }
 
+    .panel.menu-open {
+        overflow: visible;
+    }
+
     .panel.collapsed {
         height: auto;
     }
@@ -604,6 +659,23 @@ export const panelStyles = css`
         color: #d03030;
     }
 
+    .action-feedback {
+        flex-shrink: 0;
+        padding: 6px 16px;
+        border-top: 1px solid #d9f0de;
+        border-bottom: 1px solid #d9f0de;
+        background: #f1fbf3;
+        color: #2b7a3d;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .action-feedback.error {
+        border-color: #ffd7d7;
+        background: #fff3f3;
+        color: #d03030;
+    }
+
     .title-area {
         cursor: pointer;
         user-select: none;
@@ -611,6 +683,18 @@ export const panelStyles = css`
         align-items: baseline;
         gap: 8px;
         flex: 1;
+        border: none;
+        padding: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+    }
+
+    .title-area:focus-visible {
+        outline: 2px solid #0077a3;
+        outline-offset: 2px;
+        border-radius: 4px;
     }
 
     .title {

@@ -67,7 +67,7 @@ src/content.ts
 - 每个 session 持有自己的 `AbortController`、host、panel handle、canonical `PanelData` 和 observer disposer。替换/离开时先把它从 active slot 移除，再 abort、停止 observer、dispose panel 并移除 host；旧加载结果和旧 panel callback 只有在 session 仍 active 时才可写入。
 - 加载成功或失败都会写入 canonical terminal data；Bilibili/API 异常显示 error，而不是永久 loading。
 - `#readable-captions-root` 插入 `div.bpx-player-auxiliary` 顶部，UI 位于 open Shadow Root。MutationObserver 发现 host 被页面移除时，会把**同一个 host 和 panel handle**重新 prepend，并用 canonical data 调用 `updateData()`；不会 remount/reset，也不会丢失已提交的语言。
-- Panel 的 `reset(next)` 会取消待渲染 frame、字幕请求和三类生成工作，替换 per-video data，恢复 `original` mode、清除用户选 tab 标记并关闭 Note，然后重新渲染；panel 实例仍存活，因此保留 long-lived public-settings watcher 和 document pointer listener。`dispose()` 才会在取消这些 pending work 之外标记实例结束、停止 watcher 并移除 document listener；同一 host 再次 mount 时会先调用保存的 disposer。
+- Panel 的 `reset(next)` 会取消待渲染 frame、字幕请求和三类生成工作，使旧导出结果失效并清除反馈 timer，替换 per-video data，恢复 `original` mode、清除用户选 tab 标记、关闭 Note/More 并展开 Panel，然后重新渲染；panel 实例仍存活，因此保留 long-lived public-settings watcher 和 document pointer listener。`dispose()` 也会使导出反馈失效，并在取消 pending work 之外标记实例结束、停止 watcher、移除 document listener；同一 host 再次 mount 时会先调用保存的 disposer，新实例从展开状态开始。
 
 ## 字幕获取链路
 
@@ -125,7 +125,7 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 
 ## Panel 状态与渲染
 
-`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含 Lit template/CSS，但当前仍持有 module-level collapse 状态、直接执行时间戳跳转，并负责 Markdown 解析与净化；它不是纯视图函数：
+`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含受控的 Lit template/CSS，同时直接执行时间戳跳转并负责 Markdown 解析与净化；它不是纯视图函数：
 
 - 三个 view 为 `original`、`intensive`、`overview`，默认值来自 settings，仓库默认是 `original`。
 - `overview` 和 `intensive` 在首次进入对应 tab 时懒生成；已有文本、进行中或错误态都不会自动重复请求。
@@ -133,7 +133,9 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 - 原文和生成 Markdown 中可识别的时间戳会设置页面 `<video>.currentTime` 并尝试播放。
 - 生成 Markdown 先经 `marked` 转换，再由 DOMPurify 清洗，最后才传给 Lit 的 `unsafeHTML`。
 - 原文可复制为纯文本或带时间戳文本，可下载 TXT 或 SRT；Note 可复制或下载 `.md`。
-- 只有 `isCollapsed` 是 `panel-view.ts` 的 module-level 状态；`isMenuOpen`、`mode`、`uiLanguage`、生成状态和 Note drawer 状态都属于每次 `mountPanel()` 实例，reset 会关闭该实例的 More menu。
+- `isCollapsed`、`isMenuOpen`、`mode`、`uiLanguage`、三类生成状态、Note drawer 和导出反馈都属于每个 `mountPanel()` 实例。`updateData()` 及 host recovery 保留同一实例的折叠状态；`reset()` 和新的 dispose/remount session 从展开状态开始，任何实例都不能通过 module-level UI state 影响另一个实例。每个 document pointer listener 只把自己 open Shadow Root 中的 `.more-actions-wrapper` **节点本身**视为内部：pointer 位于 Panel A 的 wrapper 内时，对 A 是内部、对 Panel B 仍是外部，页面或其他 Panel 上碰巧同名的 class 不构成归属。More menu 仍通过 reset、外部 pointer 以及设置、Note、语言动作的显式 close transition 关闭；menu action 只影响发出该动作的 panel 实例，menu 已关闭时 document pointer handler 会直接返回。
+- More 打开时只通过 `.panel.menu-open { overflow: visible; }` 解除 Panel 自身裁剪，正文仍由 `.content` 的 `overflow-y: auto` 持有滚动。该修复不承诺绕过 Bilibili 祖先的 overflow/stacking context，也不实现 viewport flip/clamp；jsdom 只能验证 class/style contract，不能证明真实页面的几何或 hit-testing。
+- 主内容和 Note 的 copy/download 统一经过 mount-owned action runner：同步 throw 与 Promise rejection 进入同一边界，UI 只呈现固定本地化 success/error。request version 实现 latest-wins；反馈在 2500 ms 后清除，新动作、reset 和 dispose 会清 timer 并使旧结果失效。export helper 在 `finally` 中清理 fallback textarea/selection 与临时 anchor，并保证即使激活失败也会安排 blob URL 回收。
 - 流式 token 只为当前可见 task 调度 `requestAnimationFrame`；同一 frame 内的多个 token 合并成一次 Lit render。完成/错误立即 flush，tab 切换、reset、dispose 和其他同步 render 会取消旧 frame，隐藏 task 不因 token 重绘。
 - 标题提取只删除文档标题末尾的 `_哔哩哔哩_bilibili` 或 ` - 哔哩哔哩` suffix；`GPT-5`、`A-B-C` 等合法内部连字符保留。下载时仅用 `/[\\/:*?"<>|]/g` 把非法文件名字符替换为 `_`，生成文件再追加 `_overview`、`_intensive` 或 `_note`。
 
@@ -141,8 +143,9 @@ Public settings 有独立的 `pending | ready | error` readiness，不与字幕�
 
 - Panel 创建时先显示 `original`，并把 `generationEnabled` 设为 `false`、copy/download format 设为 `null`。原文和“设置”入口仍可用，但生成 tab、Note、复制和下载都以原生 `disabled` 或 handler guard fail closed。
 - 只有 `watchPublicSettings()` 送达第一个通过校验的真实值后，Panel 才应用配置的默认 tab，并开放该值允许的动作。
-- settings port 缺失、连接抛错、background 返回错误，或在第一个值前断开，都会进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不用硬编码默认值兜底。
-- port 在至少一个有效值之后断开时，public client 保留最后的 `ready` 值；后续生成仍会由 background 重新读取 canonical settings 并执行 `generationEnabled` gate。
+- settings port 缺失、连接抛错，或在第一个值前/已经 `ready` 后断开，都会报告一次当前 transport outage，并进入有界退避的重连路径。background 发来的 `type: "error"` read 结果同样报告 outage，但不会断开仍 current 的 port，也不会自行安排 reconnect timer。两条路径都会让 Panel 进入 `error`：显示 `role="alert"`，取消并清空生成工作，继续关闭 settings-dependent actions，不保留旧 `ready` 权限，也不用硬编码默认值兜底。
+- 对 transport failure，`watchPublicSettings()` 会为同一 outage 只保留一个 reconnect timer，以 100 ms 起步做指数退避，并把单次等待限制在最多 5000 ms。connection generation 与 active-port identity 使旧 port 的迟到 message/disconnect 失效；unsubscribe 会清 timer、使 generation 失效并安全断开 active port。
+- 当前 port 送达通过消息校验、connection-generation 与 active-port identity 检查的有效 settings snapshot 时，才结束 outage、把退避重置为 100 ms 并再次调用 `onSettings`。这个 port 可以是 read error 后保留的同一个 active port（由后续 `watchSettings()` broadcast 恢复），也可以是 transport failure 后新连接的 active port；Panel 随后从 `error` 恢复为 `ready`，按这份 authoritative snapshot 恢复允许的动作。outage/reconnect 期间从不发布 defaults。
 - Background 为每个 public-settings port 保存 revision；live `watchSettings()` broadcast 会推进 revision，使该 port 尚未完成的初始 read success/error 失效，disconnect 则删除 port。这样较新的 live value 不会被旧 snapshot 或迟到的 read error 覆盖。
 - 后续 `generationEnabled` 关闭或 `generationSettingsKey` 改变都会清空已有生成状态；设置读取失败时同样清空。`dispose()` 才停止 long-lived settings watcher。
 
@@ -182,6 +185,9 @@ Background 对每个 start 先读取 canonical settings，并在任何 keepalive
 
 ### Provider 行为
 
+- Options 的 API-key control 刻意避开 password-manager/login semantics：它始终是 `type="text"`，使用 provider-specific `name="generationApiKey-<provider>"`，并设置 `autocomplete="off"`、`autocapitalize="off"`、`spellcheck="false"`；隐藏效果由 `.masked` 的 Chrome `-webkit-text-security` 提供，而不是 `type="password"`。
+- API key 与 Overview/Intensive model control 包在 `keyed(generationProvider, ...)` 中；切换 provider 会重建整组 credential/model DOM，而不是复用可能已被 Chrome Autofill 污染的节点。三个 value binding 都通过 Lit `live()` 比较 live DOM property 与 authoritative draft，因此即使模板值未变，也会纠正浏览器在渲染后写入的值。
+- reveal state 只属于当前 Options 状态，并在 provider 切换及 authoritative transition 后恢复隐藏：初始/重试 load、Reset、clean external refresh、“载入外部设置”和“保留当前编辑”都会设置 `showApiKey = false`。这些 browser-safety transition 不会仅因不同 provider 的 credential 相同就自动删除或合并 persisted key；Reset 仍只替换 draft，只有随后 Save 才持久化该 reset。
 - `src/generation/provider-catalog.ts` 是 provider id、Options label/help/placeholder/default model 和 request builder 的单一 catalog；`GenerationProvider` 由 catalog id 推导，Options 直接遍历同一 catalog，不维护第二份 provider 列表。
 - `streamGenerationFromApi()` 先按 `generationProvider` 取得 catalog entry，再只读取 `generationProviderSettings[generationProvider]`。selected profile 的 key 为空会在 `fetch` 前报错；模型使用对应 task 的配置，`note` 复用 `intensive`，仅在 catalog entry 声明 `defaultModel` 时才做 request-time fallback。
 - endpoint、Authorization header 和 provider-specific body 由 selected entry 的 `buildRequest()` 产生。`ProviderRequest.streamDecoder` 必须经过 `satisfies Record<GenerationStreamDecoderId, ProviderStreamDecoder>` 的 exhaustive registry dispatch；当前唯一 adapter 是 `chat-completions-sse`，OpenAI 与 DeepSeek 共用它。扩展 decoder union 会在 adapter 未实现时产生 type error，不能只写一个 catalog 字段。
@@ -202,7 +208,7 @@ SSE parser 支持 LF/CRLF boundary、跨 byte chunk 的 UTF-8、多行 `data:` �
 - `getSettings()`：background/options 解包 envelope 或 legacy raw object，再经 `mergeSettings()` 返回纯 `ExtensionSettings`。
 - `createSettingsWriteRevision()` / `saveSettings(settings, revision)`：Options 在每次写前生成 caller-known UUID；即使 settings 值相同，envelope revision 也不同，从而产生可关联的写入 provenance。
 - `watchSettings()`：background/options 监听 `chrome.storage.local` 中该 key 的变化，返回 canonical settings 与独立 `{ revision | null }` metadata，并提供 unsubscribe；legacy raw change 的 revision 是 `null`。
-- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`；连接/读取错误走显式 error callback。
+- `toPublicSettings()` / `watchPublicSettings()`：通过 `readable-captions-public-settings` port 向 content panel 提供不含 provider profile、API key、provider id 或 prompt 的 `PublicExtensionSettings`。runtime connect 缺失/返回空 port/抛错以及任意阶段的 disconnect 会报告 outage，并触发有上限的指数退避重连；background read error 只报告 outage 并保留 current port。两条路径都只在通过消息校验与 connection-generation/active-port identity 检查的 settings snapshot 后恢复 readiness，或在 caller unsubscribe 时终止。
 
 Background 启动时调用 `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`，content script 不直接访问完整 storage。不要绕过这些封装直接调用 `chrome.storage.local`。
 
@@ -242,7 +248,7 @@ Options 使用 `loading | ready | saving | error` 状态机，而不是先放一
 - dirty 由 `JSON.stringify(mergeSettings(draft))` 与 baseline 比较得出。save 只允许在 `ready` 且无 conflict 时开始；保存期间整个 fieldset（含 save/reset）禁用，save 返回的 canonical value 成为新 baseline。save 失败则保留 draft、回到 `ready` 并显示错误。
 - clean form 收到外部 storage 更新会立即采用；dirty 或 saving form 保存最新 external value 为 conflict 并阻止 save。“载入外部设置”用 external value 同时替换 draft/baseline；“保留当前编辑”只把 baseline 移到 external value，因此 local draft 仍 dirty，下一次 save 是明确覆盖。
 - Options 在 `saveSettings()` 前创建 unique revision；只有 watcher metadata 中相同 revision 才是 own-save acknowledgement，canonical value equality 从不作为 provenance。save 已 resolve 但 watcher event 未到时，revision 保留在最多 8 项的 bounded set 中直到消费；迟到 acknowledgement 不会清除或替换已持有的较新 conflict。未来同值 external write 使用不同/null revision，因此 X/no-ack → Z → X 不会被吞掉；retained set 在 reload/disconnect 重置。
-- API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
+- API key 和两个 model input 只更新 selected profile；切换 provider 只改 selected id，切回来会恢复该 provider 的 draft，同时通过 keyed DOM replacement、`live()` property binding 和 reveal reset 阻断浏览器残留值/显示状态跨 profile 延续。prompt 仍共享；Reset 只改 draft，直到用户 Save 才写 storage。
 
 ## 信任边界与外发数据
 

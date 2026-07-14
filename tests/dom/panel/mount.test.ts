@@ -116,6 +116,18 @@ function moreMenu(host: HTMLElement): HTMLElement | null {
     return host.shadowRoot?.querySelector<HTMLElement>(".overflow-menu") ?? null;
 }
 
+function panelRoot(host: HTMLElement): HTMLElement {
+    const panel = host.shadowRoot?.querySelector<HTMLElement>(".panel");
+    if (!panel) throw new Error("Missing panel root");
+    return panel;
+}
+
+function toggleCollapse(host: HTMLElement): void {
+    const control = host.shadowRoot?.querySelector<HTMLElement>(".title-area");
+    if (!control) throw new Error("Missing collapse control");
+    control.click();
+}
+
 function mountReadyPanel(): { host: HTMLElement; handle: PanelHandle } {
     const host = document.createElement("section");
     document.body.append(host);
@@ -236,6 +248,168 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
+    it("restores expanded presentation state on reset", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            expect(panelRoot(host).classList).toContain("collapsed");
+            handle.reset({ transcript: null, source: "none", status: "loading" });
+            expect(panelRoot(host).classList).not.toContain("collapsed");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("starts a remounted panel expanded after the previous panel was collapsed", () => {
+        const first = mountReadyPanel();
+        toggleCollapse(first.host);
+        first.handle.dispose();
+        first.host.remove();
+
+        const second = mountReadyPanel();
+        try {
+            expect(panelRoot(second.host).classList).not.toContain("collapsed");
+        } finally {
+            second.handle.dispose();
+        }
+    });
+
+    it("keeps collapse state isolated between mounted panels", () => {
+        const first = mountReadyPanel();
+        const second = mountReadyPanel();
+        try {
+            toggleCollapse(first.host);
+            second.handle.updateData({
+                transcript: [{ from: 0, to: 1, content: "second rerender" }],
+                source: "human_view",
+                status: "ready",
+            });
+            expect(panelRoot(first.host).classList).toContain("collapsed");
+            expect(panelRoot(second.host).classList).not.toContain("collapsed");
+        } finally {
+            first.handle.dispose();
+            second.handle.dispose();
+        }
+    });
+
+    it("preserves collapse state while the same panel receives data updates", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            handle.updateData({
+                transcript: [{ from: 0, to: 1, content: "updated" }],
+                source: "human_view",
+                status: "ready",
+            });
+            expect(panelRoot(host).classList).toContain("collapsed");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("releases panel overflow while More is open in collapsed state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            toggleCollapse(host);
+            clickAction(host, "更多");
+            expect(panelRoot(host).classList).toContain("collapsed");
+            expect(panelRoot(host).classList).toContain("menu-open");
+            expect(moreMenu(host)).not.toBeNull();
+            expect(host.shadowRoot?.querySelector("style[data-rc]")?.textContent)
+                .toMatch(/\.panel\.menu-open\s*\{[^}]*overflow:\s*visible/s);
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("returns before reading the pointer path while the More menu is closed", () => {
+        const { host, handle } = mountReadyPanel();
+        const pointerDown = new Event("pointerdown", { bubbles: true, composed: true });
+        const composedPath = vi.spyOn(pointerDown, "composedPath").mockImplementation(() => {
+            throw new Error("closed More menu must not read the pointer path");
+        });
+
+        try {
+            expect(moreMenu(host)).toBeNull();
+
+            document.body.dispatchEvent(pointerDown);
+
+            expect(composedPath).not.toHaveBeenCalled();
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("closes an open More menu on an outside pointer", () => {
+        const { host, handle } = mountReadyPanel();
+
+        try {
+            clickAction(host, "更多");
+            expect(moreMenu(host)).not.toBeNull();
+
+            document.body.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("scopes outside pointers to each panel's own More wrapper", () => {
+        const first = mountReadyPanel();
+        const second = mountReadyPanel();
+        const decoy = document.createElement("div");
+        decoy.className = "more-actions-wrapper";
+        document.body.append(decoy);
+
+        try {
+            clickAction(first.host, "更多");
+            clickAction(second.host, "更多");
+            const firstWrapper = first.host.shadowRoot?.querySelector<HTMLElement>(
+                ".more-actions-wrapper",
+            );
+            const firstMoreButton = firstWrapper?.querySelector<HTMLButtonElement>(
+                'button[title="更多"]',
+            );
+            if (!firstMoreButton) throw new Error("Missing first panel More button");
+
+            firstMoreButton.dispatchEvent(new Event("pointerdown", {
+                bubbles: true,
+                composed: true,
+            }));
+
+            expect(moreMenu(first.host)).not.toBeNull();
+            expect(moreMenu(second.host)).toBeNull();
+
+            clickAction(second.host, "更多");
+            decoy.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+
+            expect(moreMenu(first.host)).toBeNull();
+            expect(moreMenu(second.host)).toBeNull();
+        } finally {
+            first.handle.dispose();
+            second.handle.dispose();
+        }
+    });
+
+    it("closes the More menu when language is changed", () => {
+        const { host, handle } = mountReadyPanel();
+
+        try {
+            clickAction(host, "更多");
+            const language = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("语言"));
+            if (!language) throw new Error("Missing language action");
+
+            language.click();
+
+            expect(moreMenu(host)).toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
     it("keeps More-menu state isolated between mounted panels", () => {
         const first = mountReadyPanel();
         const second = mountReadyPanel();
@@ -254,6 +428,145 @@ describe("mountPanel lifecycle", () => {
         } finally {
             first.handle.dispose();
             second.handle.dispose();
+        }
+    });
+
+    it("exposes the collapse control with label in name and expanded state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect(control).not.toBeNull();
+            expect.soft(control?.getAttribute("aria-label"))
+                .toBe("可读字幕 Readable Captions，收起面板");
+            expect.soft(control?.getAttribute("title"))
+                .toBe("可读字幕 Readable Captions，收起面板");
+            expect(control?.getAttribute("aria-expanded")).toBe("true");
+            control?.click();
+
+            const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect.soft(collapsed?.getAttribute("aria-label"))
+                .toBe("可读字幕 Readable Captions，展开面板");
+            expect.soft(collapsed?.getAttribute("title"))
+                .toBe("可读字幕 Readable Captions，展开面板");
+            expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("localizes control accessibility in English", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            clickAction(host, "更多");
+            const language = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("语言：中文"));
+            if (!language) throw new Error("Missing language action");
+            language.click();
+
+            const download = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Download current content"]',
+            );
+            const copy = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Copy current content"]',
+            );
+            const more = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="More"]',
+            );
+            expect.soft(download?.getAttribute("title")).toBe("Download current content");
+            expect.soft(copy?.getAttribute("title")).toBe("Copy current content");
+            expect.soft(more?.getAttribute("title")).toBe("More");
+            expect.soft(more?.getAttribute("aria-expanded")).toBe("false");
+            expect.soft(more?.getAttribute("aria-controls")).toBe("rc-overflow-menu");
+
+            more?.click();
+            const openMore = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="More"]',
+            );
+            expect.soft(openMore?.getAttribute("aria-expanded")).toBe("true");
+            expect(host.shadowRoot?.querySelector("#rc-overflow-menu")).not.toBeNull();
+            openMore?.click();
+
+            const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect.soft(control?.getAttribute("aria-label"))
+                .toBe("Readable Captions, Collapse panel");
+            expect.soft(control?.getAttribute("title"))
+                .toBe("Readable Captions, Collapse panel");
+            expect(control?.getAttribute("aria-expanded")).toBe("true");
+            control?.click();
+
+            const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect.soft(collapsed?.getAttribute("aria-label"))
+                .toBe("Readable Captions, Expand panel");
+            expect.soft(collapsed?.getAttribute("title"))
+                .toBe("Readable Captions, Expand panel");
+            expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
+            collapsed?.click();
+
+            clickAction(host, "More");
+            const note = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("Export Markdown Note"));
+            if (!note) throw new Error("Missing Note action");
+            note.click();
+            const close = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Close Markdown Note"]',
+            );
+            expect.soft(close?.getAttribute("title")).toBe("Close Markdown Note");
+            expect(close?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("uses the sufficient-contrast collapse focus outline", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            expect(host.shadowRoot?.querySelector("style[data-rc]")?.textContent)
+                .toMatch(/\.title-area:focus-visible\s*\{[^}]*outline:\s*2px solid #0077a3/s);
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("labels icon buttons and exposes More disclosure state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            const download = host.shadowRoot?.querySelector('button[aria-label="下载当前内容"]');
+            const copy = host.shadowRoot?.querySelector('button[aria-label="复制当前内容"]');
+            const more = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="更多"]',
+            );
+            expect.soft(download).not.toBeNull();
+            expect.soft(copy).not.toBeNull();
+            expect.soft(more?.getAttribute("aria-expanded")).toBe("false");
+            expect.soft(more?.getAttribute("aria-controls")).toBe("rc-overflow-menu");
+            expect([...host.shadowRoot!.querySelectorAll("button.icon-btn svg")]
+                .every((svg) => svg.getAttribute("aria-hidden") === "true")).toBe(true);
+
+            more?.click();
+            const openMore = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="更多"]',
+            );
+            expect.soft(openMore?.getAttribute("aria-expanded")).toBe("true");
+            expect(host.shadowRoot?.querySelector("#rc-overflow-menu")).not.toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("gives the Note close icon an explicit accessible name", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            clickAction(host, "更多");
+            const note = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("导出 Markdown Note"));
+            note?.click();
+            const close = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="关闭 Markdown Note"]',
+            );
+            expect(close).not.toBeNull();
+            expect(close?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            handle.dispose();
         }
     });
 

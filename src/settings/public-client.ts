@@ -35,65 +35,105 @@ function toError(errorValue: unknown): Error {
         : "Failed to connect public settings port.");
 }
 
+const RECONNECT_BASE_DELAY_MS = 100;
+const RECONNECT_MAX_DELAY_MS = 5000;
+
 export function watchPublicSettings(
     onSettings: (settings: PublicExtensionSettings) => void,
     onError: (error: Error) => void,
 ): () => void {
-    let port: RuntimePort | null = null;
+    let activePort: RuntimePort | null = null;
+    let connectionGeneration = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
+    let outageReported = false;
     let stopped = false;
-    let connectionClosed = false;
-    let hasReceivedSettings = false;
-    let errorReported = false;
-    let connectionError: Error | null = null;
 
-    const reportError = (error: Error): void => {
-        if (stopped || errorReported) {
+    const reportOutage = (error: Error): void => {
+        if (stopped || outageReported) {
             return;
         }
 
-        errorReported = true;
+        outageReported = true;
         onError(error);
     };
 
-    try {
-        port = getExtensionChrome()?.runtime?.connect?.({ name: PUBLIC_SETTINGS_PORT }) ?? null;
-    } catch (err) {
-        connectionError = toError(err);
-    }
+    const scheduleReconnect = (error: Error): void => {
+        if (stopped) {
+            return;
+        }
 
-    if (!port) {
-        queueMicrotask(() => {
-            reportError(connectionError ?? new Error("Public settings port is unavailable."));
+        reportOutage(error);
+        if (stopped || reconnectTimer !== null) {
+            return;
+        }
+
+        const delayMs = reconnectDelayMs;
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_DELAY_MS);
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connect();
+        }, delayMs);
+    };
+
+    const connect = (): void => {
+        if (stopped) {
+            return;
+        }
+
+        const generation = ++connectionGeneration;
+        let port: RuntimePort | null = null;
+        try {
+            port = getExtensionChrome()?.runtime?.connect?.({ name: PUBLIC_SETTINGS_PORT }) ?? null;
+        } catch (errorValue) {
+            scheduleReconnect(toError(errorValue));
+            return;
+        }
+
+        if (!port) {
+            scheduleReconnect(new Error("Public settings port is unavailable; attempting to reconnect."));
+            return;
+        }
+
+        if (stopped || generation !== connectionGeneration) {
+            try {
+                port.disconnect();
+            } catch {
+                // The port may already be closed.
+            }
+            return;
+        }
+
+        activePort = port;
+        const isActiveConnection = (): boolean => !stopped
+            && generation === connectionGeneration
+            && activePort === port;
+
+        port.onMessage.addListener((message) => {
+            if (!isActiveConnection() || !isPublicSettingsPortMessage(message)) {
+                return;
+            }
+
+            if (message.type === "settings") {
+                outageReported = false;
+                reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
+                onSettings(message.settings);
+            } else {
+                reportOutage(new Error(message.message));
+            }
         });
-        return () => {
-            stopped = true;
-        };
-    }
 
-    port.onMessage.addListener((message) => {
-        if (!isPublicSettingsPortMessage(message) || stopped || connectionClosed) {
-            return;
-        }
+        port.onDisconnect.addListener(() => {
+            if (!isActiveConnection()) {
+                return;
+            }
 
-        if (message.type === "settings") {
-            hasReceivedSettings = true;
-            onSettings(message.settings);
-        } else {
-            reportError(new Error(message.message));
-        }
-    });
+            activePort = null;
+            scheduleReconnect(new Error("Public settings port disconnected; attempting to reconnect."));
+        });
+    };
 
-    port.onDisconnect.addListener(() => {
-        if (stopped || connectionClosed) {
-            return;
-        }
-
-        connectionClosed = true;
-        port = null;
-        if (!hasReceivedSettings) {
-            reportError(new Error("Public settings port disconnected before settings were received."));
-        }
-    });
+    connect();
 
     return () => {
         if (stopped) {
@@ -101,11 +141,16 @@ export function watchPublicSettings(
         }
 
         stopped = true;
-        connectionClosed = true;
-        const activePort = port;
-        port = null;
+        connectionGeneration += 1;
+        if (reconnectTimer !== null) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+
+        const port = activePort;
+        activePort = null;
         try {
-            activePort?.disconnect();
+            port?.disconnect();
         } catch {
             // The port may already be closed.
         }
