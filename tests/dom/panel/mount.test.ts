@@ -394,6 +394,66 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
+    it("exposes the collapse control as a named native button with expanded state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect(control).not.toBeNull();
+            expect(control?.getAttribute("aria-label")).toBe("收起面板");
+            expect(control?.getAttribute("aria-expanded")).toBe("true");
+            control?.click();
+
+            const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect(collapsed?.getAttribute("aria-label")).toBe("展开面板");
+            expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("labels icon buttons and exposes More disclosure state", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            const download = host.shadowRoot?.querySelector('button[aria-label="下载当前内容"]');
+            const copy = host.shadowRoot?.querySelector('button[aria-label="复制当前内容"]');
+            const more = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="更多"]',
+            );
+            expect.soft(download).not.toBeNull();
+            expect.soft(copy).not.toBeNull();
+            expect.soft(more?.getAttribute("aria-expanded")).toBe("false");
+            expect.soft(more?.getAttribute("aria-controls")).toBe("rc-overflow-menu");
+            expect([...host.shadowRoot!.querySelectorAll("button.icon-btn svg")]
+                .every((svg) => svg.getAttribute("aria-hidden") === "true")).toBe(true);
+
+            more?.click();
+            const openMore = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="更多"]',
+            );
+            expect.soft(openMore?.getAttribute("aria-expanded")).toBe("true");
+            expect(host.shadowRoot?.querySelector("#rc-overflow-menu")).not.toBeNull();
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("gives the Note close icon an explicit accessible name", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            clickAction(host, "更多");
+            const note = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("导出 Markdown Note"));
+            note?.click();
+            const close = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="关闭 Markdown Note"]',
+            );
+            expect(close).not.toBeNull();
+            expect(close?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            handle.dispose();
+        }
+    });
+
     it("ignores stale generation callbacks after reset", async () => {
         const { host, handle } = mountReadyPanel();
         clickTab(host, "overview");
