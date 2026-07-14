@@ -967,7 +967,7 @@ git add -- docs/architecture.md docs/development.md docs/superpowers/plans/2026-
 git commit -m "docs: document panel interaction safeguards"
 ```
 
-- [ ] **Step 5: Request independent whole-diff review**
+- [x] **Step 5: Request independent whole-diff review**
 
 Review `b3de365..HEAD` for:
 
@@ -980,6 +980,8 @@ Review `b3de365..HEAD` for:
 - genuine RED evidence before each production change.
 
 Fix every Critical/Important finding with a focused RED→GREEN cycle and rerun Step 3 after production changes.
+
+The whole-diff review found one per-instance outside-pointer identity gap. Commit `f503540` added a two-Panel/page-decoy RED→GREEN regression, switched the document listener from shared-class matching to this Shadow Root's wrapper identity, updated the manual-smoke contract, and passed re-review with no remaining Critical or Important findings.
 
 - [ ] **Step 6: Push and refresh Draft PR #9**
 

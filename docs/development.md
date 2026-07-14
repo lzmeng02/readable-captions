@@ -156,7 +156,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | Providers | 分别用获授权的 OpenAI 与 DeepSeek 凭据生成 | 每边只用自己的 profile/endpoint，payload 兼容并完成 streaming |
 | Streaming | Cancel/retry a long generation | No partial success; worker stays active |
 | Options | Change/reset/save General and Export controls | Displayed values equal saved values |
-| More menu | 同时打开 A/B：点击 A 的 More wrapper；重开后点击页面同名 class；再次重开并在 A 切换语言 | A wrapper pointer 只保留 A 并关闭 B；页面同名 class 对两者都是外部；语言 action 只关闭 originating A，不影响 B |
+| More menu | 同时打开 A/B：点击 A 的 More wrapper；重开后点击页面同名 class；再次重开并用键盘在 A 触发语言 action | A wrapper pointer 只保留 A 并关闭 B；页面同名 class 对两者都是外部；键盘触发的语言 action 只关闭 originating A、不影响 B；鼠标触发时，前置 pointerdown 会先按 outside-pointer 规则关闭 B |
 | Collapsed More | 折叠 Panel 后打开 More，并用鼠标/键盘触发各项 | menu 不被 Panel 自身裁剪且可 hit-test；另行观察 Bilibili 祖先裁剪和小 viewport |
 | Export activation | 在主内容与 Note 中分别复制和下载 | 真实 user activation 下 clipboard/download 可触发；成功/失败反馈安全且临时资源被清理 |
 | Dev | Start dev and trigger content rebuild | All five artifacts remain |
