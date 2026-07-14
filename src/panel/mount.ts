@@ -1,6 +1,6 @@
 import { render } from "lit";
 import { panelTemplate, panelStyles } from "./panel-view";
-import type { Mode, PublicSettingsStatus } from "./panel-view";
+import type { ActionFeedback, Mode, PanelAction, PublicSettingsStatus } from "./panel-view";
 import { streamGeneration } from "../generation/llm-provider";
 import { getSafeGenerationErrorMessage } from "../generation/errors";
 import type { GenerationMetadata, GenerationTask } from "../generation/types";
@@ -21,6 +21,7 @@ import { createRenderScheduler } from "./render-scheduler";
 import { extractVideoTitle } from "./title-utils";
 
 const cleanupKey = Symbol("rcPanelCleanup");
+const ACTION_FEEDBACK_DURATION_MS = 2500;
 
 type HostWithCleanup = HTMLElement & {
     [cleanupKey]?: () => void;
@@ -97,6 +98,9 @@ export function mountPanel(
     let mode: Mode = "original";
     let settingsStatus: PublicSettingsStatus = "pending";
     let settingsError: string | null = null;
+    let actionFeedback: ActionFeedback = null;
+    let actionRequestVersion = 0;
+    let actionFeedbackTimer: ReturnType<typeof window.setTimeout> | null = null;
     let generationEnabled = false;
     let generationSettingsKey = "";
     let hasUserSelectedMode = false;
@@ -148,6 +152,15 @@ export function mountPanel(
         clearGenerationState("overview");
         clearGenerationState("intensive");
         clearGenerationState("note");
+    };
+
+    const clearActionFeedback = (invalidate = true): void => {
+        if (invalidate) actionRequestVersion += 1;
+        if (actionFeedbackTimer !== null) {
+            window.clearTimeout(actionFeedbackTimer);
+            actionFeedbackTimer = null;
+        }
+        actionFeedback = null;
     };
 
     const generate = (task: GenerationTask): void => {
@@ -276,46 +289,50 @@ export function mountPanel(
         renderPanel();
     };
 
-    const handleCopyNote = async (): Promise<void> => {
-        if (settingsStatus !== "ready") return;
+    const handleCopyNote = async (): Promise<boolean> => {
+        if (settingsStatus !== "ready") return false;
         const note = generationStates.note.text;
-        if (!note) return;
+        if (!note) return false;
         await copyMarkdownNote(note);
+        return true;
     };
 
-    const handleDownloadNote = (): void => {
-        if (settingsStatus !== "ready") return;
+    const handleDownloadNote = (): boolean => {
+        if (settingsStatus !== "ready") return false;
         const note = generationStates.note.text;
-        if (!note) return;
+        if (!note) return false;
         downloadMarkdownNote(note, extractVideoTitle(document.title));
+        return true;
     };
 
-    const handleCopy = async (): Promise<void> => {
-        if (settingsStatus !== "ready") return;
+    const handleCopy = async (): Promise<boolean> => {
+        if (settingsStatus !== "ready") return false;
 
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
-            if (!text) return;
+            if (!text) return false;
             await copyMarkdownText(text);
-            return;
+            return true;
         }
 
-        if (!copyFormat || !data.transcript || data.transcript.length === 0) return;
+        if (!copyFormat || !data.transcript || data.transcript.length === 0) return false;
         await copyTranscript(data.transcript, copyFormat);
+        return true;
     };
 
-    const handleDownload = (): void => {
-        if (settingsStatus !== "ready") return;
+    const handleDownload = (): boolean => {
+        if (settingsStatus !== "ready") return false;
 
         if (isPanelGenerationMode(mode)) {
             const text = generationStates[mode].text;
-            if (!text) return;
+            if (!text) return false;
             downloadMarkdownText(text, extractVideoTitle(document.title), getGenerationFileSuffix(mode));
-            return;
+            return true;
         }
 
-        if (!downloadFormat || !data.transcript || data.transcript.length === 0) return;
+        if (!downloadFormat || !data.transcript || data.transcript.length === 0) return false;
         downloadTranscript(data.transcript, downloadFormat, extractVideoTitle(document.title));
+        return true;
     };
 
     const handleSubtitleLanguageChange = async (newUrl: string): Promise<void> => {
@@ -377,6 +394,44 @@ export function mountPanel(
         renderPanel();
     };
 
+    const runAction = (
+        action: PanelAction,
+        operation: () => boolean | void | Promise<boolean | void>,
+    ): void => {
+        const requestVersion = ++actionRequestVersion;
+        const hadActionFeedback = actionFeedback !== null;
+        clearActionFeedback(false);
+        if (hadActionFeedback) renderPanel();
+
+        void (async () => {
+            try {
+                const performed = await operation();
+                if (
+                    performed === false
+                    || isDisposed
+                    || actionRequestVersion !== requestVersion
+                ) return;
+                actionFeedback = { action, status: "success" };
+            } catch (error) {
+                if (isDisposed || actionRequestVersion !== requestVersion) return;
+                console.error(`Readable Captions ${action} failed`, error);
+                actionFeedback = { action, status: "error" };
+            }
+            renderPanel();
+            actionFeedbackTimer = window.setTimeout(() => {
+                if (isDisposed || actionRequestVersion !== requestVersion) return;
+                actionFeedbackTimer = null;
+                actionFeedback = null;
+                renderPanel();
+            }, ACTION_FEEDBACK_DURATION_MS);
+        })();
+    };
+
+    const handleCopyAction = (): void => runAction("copy", handleCopy);
+    const handleDownloadAction = (): void => runAction("download", handleDownload);
+    const handleCopyNoteAction = (): void => runAction("copy", handleCopyNote);
+    const handleDownloadNoteAction = (): void => runAction("download", handleDownloadNote);
+
     const renderPanelNow = (): void => {
         if (isDisposed) {
             return;
@@ -400,14 +455,15 @@ export function mountPanel(
                 error: activeGenerationState.error,
                 onRetry: handleRetryGeneration,
             },
-            handleCopy,
-            handleDownload,
+            handleCopyAction,
+            handleDownloadAction,
             handleSubtitleLanguageChange,
             { pendingSubtitleUrl, subtitleError },
             {
                 generationEnabled,
                 settingsStatus,
                 settingsError,
+                actionFeedback,
                 isCollapsed,
                 onCollapsedChange: (nextIsCollapsed) => {
                     isCollapsed = nextIsCollapsed;
@@ -425,8 +481,8 @@ export function mountPanel(
                 onRetry: handleRetryNote,
                 onOpen: handleOpenNote,
                 onClose: handleCloseNote,
-                onCopy: handleCopyNote,
-                onDownload: handleDownloadNote,
+                onCopy: handleCopyNoteAction,
+                onDownload: handleDownloadNoteAction,
             },
         ), shadow);
     };
@@ -532,6 +588,7 @@ export function mountPanel(
     const dispose = (): void => {
         if (isDisposed) return;
         isDisposed = true;
+        clearActionFeedback();
         generationRenderScheduler.cancel();
         invalidateSubtitleRequest();
         clearAllGenerationStates();
@@ -549,6 +606,7 @@ export function mountPanel(
         reset(next) {
             if (isDisposed) return;
             generationRenderScheduler.cancel();
+            clearActionFeedback();
             invalidateSubtitleRequest();
             clearAllGenerationStates();
             data = next;

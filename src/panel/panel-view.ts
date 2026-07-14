@@ -6,6 +6,10 @@ import type { PanelData, SubtitleSelectionUiState } from "./types";
 
 export type Mode = "overview" | "intensive" | "original";
 export type PublicSettingsStatus = "pending" | "ready" | "error";
+export type PanelAction = "copy" | "download";
+export type ActionFeedback =
+    | { action: PanelAction; status: "success" | "error" }
+    | null;
 
 export type GenerationUiState = {
     isGenerating: boolean;
@@ -26,6 +30,7 @@ export type PanelUiOptions = {
     generationEnabled: boolean;
     settingsStatus: PublicSettingsStatus;
     settingsError: string | null;
+    actionFeedback: ActionFeedback;
     isCollapsed: boolean;
     onCollapsedChange: (isCollapsed: boolean) => void;
     isMenuOpen: boolean;
@@ -51,6 +56,7 @@ export function panelTemplate(
         generationEnabled: false,
         settingsStatus: "pending",
         settingsError: null,
+        actionFeedback: null,
         isCollapsed: false,
         onCollapsedChange: () => undefined,
         isMenuOpen: false,
@@ -103,12 +109,10 @@ export function panelTemplate(
         noteState?.onOpen();
     };
 
-    const handleActionClick = (event: Event, action?: () => void | Promise<void>) => {
+    const invokeAction = (event: Event, action?: () => void | Promise<void>) => {
         event.preventDefault();
         event.stopPropagation();
-        Promise.resolve(action?.()).catch((err) => {
-            console.error("Readable Captions action failed", err);
-        });
+        action?.();
     };
 
     const tab = (id: Mode, label: string) => {
@@ -431,8 +435,8 @@ export function panelTemplate(
             if (noteState.text) {
                 return html`
                     <div class="note-actions">
-                        <button class="note-action-btn primary" @click=${(event: Event) => handleActionClick(event, noteState.onCopy)}>${currentLang === "zh" ? "复制 Markdown" : "Copy Markdown"}</button>
-                        <button class="note-action-btn" @click=${(event: Event) => handleActionClick(event, noteState.onDownload)}>${currentLang === "zh" ? "下载 .md" : "Download .md"}</button>
+                        <button class="note-action-btn primary" @click=${(event: Event) => invokeAction(event, noteState.onCopy)}>${currentLang === "zh" ? "复制 Markdown" : "Copy Markdown"}</button>
+                        <button class="note-action-btn" @click=${(event: Event) => invokeAction(event, noteState.onDownload)}>${currentLang === "zh" ? "下载 .md" : "Download .md"}</button>
                     </div>
                     <div class="note-preview markdown-body" @click=${handleMarkdownClick}>${renderMarkdown(noteState.text)}</div>
                 `;
@@ -487,6 +491,25 @@ export function panelTemplate(
         return nothing;
     };
 
+    const renderActionFeedback = () => {
+        const feedback = uiOptions.actionFeedback;
+        if (!feedback) return nothing;
+        const message = feedback.action === "copy"
+            ? (feedback.status === "success"
+                ? (currentLang === "zh" ? "已复制" : "Copied")
+                : (currentLang === "zh" ? "复制失败，请重试" : "Copy failed. Please try again."))
+            : (feedback.status === "success"
+                ? (currentLang === "zh" ? "已开始下载" : "Download started")
+                : (currentLang === "zh" ? "下载失败，请重试" : "Download failed. Please try again."));
+
+        return html`
+            <div
+                class="action-feedback ${feedback.status}"
+                role=${feedback.status === "error" ? "alert" : "status"}
+            >${message}</div>
+        `;
+    };
+
     return html`
         <div class="panel ${isCollapsed ? "collapsed" : ""} ${isMenuOpen ? "menu-open" : ""}">
             <header class="header">
@@ -496,10 +519,10 @@ export function panelTemplate(
                 </div>
 
                 <div class="actions">
-                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => handleActionClick(event, onDownload)}>
+                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "下载当前内容" : "Download current content"}" @click=${(event: Event) => invokeAction(event, onDownload)}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     </button>
-                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => handleActionClick(event, onCopy)}>
+                    <button class="icon-btn" ?disabled=${!settingsReady} title="${currentLang === "zh" ? "复制当前内容" : "Copy current content"}" @click=${(event: Event) => invokeAction(event, onCopy)}>
                         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
 
@@ -530,6 +553,7 @@ export function panelTemplate(
             </header>
 
             ${renderSettingsStatus()}
+            ${renderActionFeedback()}
 
             ${!isCollapsed ? html`
                 <nav class="bili-tabs">
@@ -608,6 +632,23 @@ export const panelStyles = css`
     }
 
     .settings-status.error {
+        border-color: #ffd7d7;
+        background: #fff3f3;
+        color: #d03030;
+    }
+
+    .action-feedback {
+        flex-shrink: 0;
+        padding: 6px 16px;
+        border-top: 1px solid #d9f0de;
+        border-bottom: 1px solid #d9f0de;
+        background: #f1fbf3;
+        color: #2b7a3d;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .action-feedback.error {
         border-color: #ffd7d7;
         background: #fff3f3;
         color: #d03030;
