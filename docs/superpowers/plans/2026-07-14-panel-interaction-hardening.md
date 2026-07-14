@@ -35,7 +35,7 @@
 - Produces: `PanelUiOptions.isCollapsed: boolean` and `onCollapsedChange(next: boolean): void`.
 - Preserves: `PanelHandle.updateData(next)`, `reset(next)`, and `dispose()` signatures.
 
-- [ ] **Step 1: Add collapse/menu test helpers and failing lifecycle regressions**
+- [x] **Step 1: Add collapse/menu test helpers and failing lifecycle regressions**
 
 Add beside `moreMenu()`:
 
@@ -131,7 +131,7 @@ it("releases panel overflow while More is open in collapsed state", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -141,7 +141,7 @@ npm test -- tests/dom/panel/mount.test.ts -t "collapse|collapsed|remounted|overf
 
 Expected: reset/remount and two-panel isolation fail because collapse is module-global; the menu case fails because `menu-open` and its overflow rule do not exist. The same-handle update case may already pass and records the preservation contract.
 
-- [ ] **Step 3: Move collapse ownership into `mountPanel()`**
+- [x] **Step 3: Move collapse ownership into `mountPanel()`**
 
 Remove module-level `let isCollapsed = false`. Extend `PanelUiOptions` and its default:
 
@@ -176,7 +176,7 @@ onCollapsedChange: (nextIsCollapsed) => {
 
 Set `isCollapsed = false` in `reset(next)`. Do not change it in `updateData()` or `dispose()`.
 
-- [ ] **Step 4: Add the conditional overflow escape**
+- [x] **Step 4: Add the conditional overflow escape**
 
 Render:
 
@@ -194,7 +194,7 @@ Add:
 
 Keep base `.panel { overflow: hidden; }` and `.content { overflow-y: auto; }` unchanged.
 
-- [ ] **Step 5: Run GREEN checks and commit**
+- [x] **Step 5: Run GREEN checks and commit**
 
 ```powershell
 npm test -- tests/dom/panel/mount.test.ts
@@ -218,7 +218,7 @@ Expected: all focused tests pass and TypeScript exits 0.
 - Preserves all exported function signatures in `export-utils.ts`.
 - Produces: fallback textarea/selection restoration in `finally` and blob URL cleanup scheduling after successful or throwing anchor activation.
 
-- [ ] **Step 1: Add failing cleanup tests**
+- [x] **Step 1: Add failing cleanup tests**
 
 Create `tests/unit/panel/export-utils.test.ts`:
 
@@ -279,7 +279,7 @@ describe("Panel export resource cleanup", () => {
 });
 ```
 
-- [ ] **Step 2: Run the new suite and verify RED**
+- [x] **Step 2: Run the new suite and verify RED**
 
 ```powershell
 npm test -- tests/unit/panel/export-utils.test.ts
@@ -287,7 +287,7 @@ npm test -- tests/unit/panel/export-utils.test.ts
 
 Expected: the fallback textarea remains attached after `execCommand` throws, and no URL revocation is scheduled after anchor `click` throws.
 
-- [ ] **Step 3: Put fallback-copy cleanup in `finally`**
+- [x] **Step 3: Put fallback-copy cleanup in `finally`**
 
 Replace the mutation portion of `fallbackCopyText()`:
 
@@ -312,7 +312,7 @@ if (!copied) {
 }
 ```
 
-- [ ] **Step 4: Put download activation and URL cleanup in `finally`**
+- [x] **Step 4: Put download activation and URL cleanup in `finally`**
 
 Replace anchor activation in `downloadTextFile()`:
 
@@ -335,7 +335,7 @@ try {
 
 The original exception continues propagating to the Panel action runner.
 
-- [ ] **Step 5: Run GREEN checks and commit**
+- [x] **Step 5: Run GREEN checks and commit**
 
 ```powershell
 npm test -- tests/unit/panel/export-utils.test.ts tests/dom/panel/mount.test.ts
@@ -366,7 +366,7 @@ export type ActionFeedback =
 
 `PanelUiOptions` gains `actionFeedback: ActionFeedback`. Public `PanelHandle` and export-helper signatures stay unchanged.
 
-- [ ] **Step 1: Add the feedback harness and basic failing cases**
+- [x] **Step 1: Add the feedback harness and basic failing cases**
 
 Create `tests/dom/panel/mount-action-feedback.test.ts`:
 
@@ -512,7 +512,7 @@ describe("Panel export action feedback", () => {
 });
 ```
 
-- [ ] **Step 2: Run the basic cases and verify RED**
+- [x] **Step 2: Run the basic cases and verify RED**
 
 ```powershell
 npm test -- tests/dom/panel/mount-action-feedback.test.ts
@@ -520,7 +520,7 @@ npm test -- tests/dom/panel/mount-action-feedback.test.ts
 
 Expected: no `.action-feedback` exists; the synchronous download case also demonstrates that `Promise.resolve(action())` executes too late to catch the throw.
 
-- [ ] **Step 3: Add minimal mount-owned feedback**
+- [x] **Step 3: Add minimal mount-owned feedback**
 
 Add the Interfaces types and `actionFeedback: null` to the default `PanelUiOptions`. Render after settings status:
 
@@ -590,7 +590,7 @@ const handleDownloadNoteAction = () => runAction("download", handleDownloadNote)
 
 Pass `actionFeedback` in `PanelUiOptions`.
 
-- [ ] **Step 4: Run basic feedback GREEN**
+- [x] **Step 4: Run basic feedback GREEN**
 
 ```powershell
 npm test -- tests/dom/panel/mount-action-feedback.test.ts
@@ -598,7 +598,7 @@ npm test -- tests/dom/panel/mount-action-feedback.test.ts
 
 Expected: copy rejection, synchronous download throw, and both success messages pass.
 
-- [ ] **Step 5: Add failing stale-result and lifecycle cases**
+- [x] **Step 5: Add failing stale-result and lifecycle cases**
 
 Add:
 
@@ -659,7 +659,7 @@ it("does not render a pending action result after dispose", async () => {
 });
 ```
 
-- [ ] **Step 6: Run lifecycle cases and verify RED**
+- [x] **Step 6: Run lifecycle cases and verify RED**
 
 ```powershell
 npm test -- tests/dom/panel/mount-action-feedback.test.ts -t "latest|2500|reset|dispose"
@@ -667,7 +667,7 @@ npm test -- tests/dom/panel/mount-action-feedback.test.ts -t "latest|2500|reset|
 
 Expected: older copy overwrites newer download, feedback never clears, and reset allows a pending completion. Dispose may already pass via `isDisposed` and records the existing suppression contract.
 
-- [ ] **Step 7: Add versioning and timer cleanup**
+- [x] **Step 7: Add versioning and timer cleanup**
 
 ```ts
 const ACTION_FEEDBACK_DURATION_MS = 2500;
@@ -697,7 +697,7 @@ actionFeedbackTimer = window.setTimeout(() => {
 
 Call `clearActionFeedback()` from `reset()` and `dispose()`.
 
-- [ ] **Step 8: Run GREEN checks and commit**
+- [x] **Step 8: Run GREEN checks and commit**
 
 ```powershell
 npm test -- tests/dom/panel/mount-action-feedback.test.ts
@@ -719,24 +719,30 @@ Expected: all action, lifecycle, readiness, and type checks pass.
 
 **Interfaces:**
 - Preserves controlled collapse/menu/action state from Tasks 1 and 3.
-- Produces a native collapse `button`, explicit icon labels, More disclosure state, and decorative-SVG hiding.
+- Produces a native collapse `button` with label-in-name and visible focus, explicit bilingual icon labels, More disclosure state, and decorative-SVG hiding.
 
-- [ ] **Step 1: Add failing semantic regressions**
+- [x] **Step 1: Add failing semantic regressions**
 
 Add to `tests/dom/panel/mount.test.ts`:
 
 ```ts
-it("exposes the collapse control as a named native button with expanded state", () => {
+it("exposes the collapse control with label in name and expanded state", () => {
     const { host, handle } = mountReadyPanel();
     try {
         const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
         expect(control).not.toBeNull();
-        expect(control?.getAttribute("aria-label")).toBe("收起面板");
+        expect.soft(control?.getAttribute("aria-label"))
+            .toBe("可读字幕 Readable Captions，收起面板");
+        expect.soft(control?.getAttribute("title"))
+            .toBe("可读字幕 Readable Captions，收起面板");
         expect(control?.getAttribute("aria-expanded")).toBe("true");
         control?.click();
 
         const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
-        expect(collapsed?.getAttribute("aria-label")).toBe("展开面板");
+        expect.soft(collapsed?.getAttribute("aria-label"))
+            .toBe("可读字幕 Readable Captions，展开面板");
+        expect.soft(collapsed?.getAttribute("title"))
+            .toBe("可读字幕 Readable Captions，展开面板");
         expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
     } finally {
         handle.dispose();
@@ -784,7 +790,11 @@ it("gives the Note close icon an explicit accessible name", () => {
 });
 ```
 
-- [ ] **Step 2: Run semantic tests and verify RED**
+The follow-up accessibility review also requires real-DOM English coverage after switching the UI language. Assert matching `title`/`aria-label` values of `Readable Captions, Collapse panel` and `Readable Captions, Expand panel`, plus the English download/copy/More/Note-close labels and More disclosure state. Add a mounted-style regression for `outline: 2px solid #0077a3`.
+
+- [x] **Step 2: Run semantic tests and verify RED**
+
+The original semantic RED was:
 
 ```powershell
 npm test -- tests/dom/panel/mount.test.ts -t "named native button|labels icon|accessible name"
@@ -792,14 +802,28 @@ npm test -- tests/dom/panel/mount.test.ts -t "named native button|labels icon|ac
 
 Expected: collapse is still a `div`; icon buttons lack explicit `aria-label`; More lacks expanded/controls/id; Note close lacks an explicit label.
 
-- [ ] **Step 3: Convert collapse to a native button**
+The follow-up review RED was captured before its production correction:
+
+```powershell
+npm test -- tests/dom/panel/mount.test.ts -t "label in name|English|focus outline"
+```
+
+Expected: the action-only Chinese/English names omit the visible product label, and the old accent outline fails the sufficient-contrast contract.
+
+- [x] **Step 3: Convert collapse to a native button**
 
 Create:
 
 ```ts
-const collapseLabel = isCollapsed
+const panelVisibleName = currentLang === "zh"
+    ? "可读字幕 Readable Captions"
+    : "Readable Captions";
+const collapseAction = isCollapsed
     ? (currentLang === "zh" ? "展开面板" : "Expand panel")
     : (currentLang === "zh" ? "收起面板" : "Collapse panel");
+const collapseLabel = currentLang === "zh"
+    ? `${panelVisibleName}，${collapseAction}`
+    : `${panelVisibleName}, ${collapseAction}`;
 ```
 
 Render:
@@ -833,13 +857,13 @@ Add:
 
 ```css
 .title-area:focus-visible {
-    outline: 2px solid #00aeec;
+    outline: 2px solid #0077a3;
     outline-offset: 2px;
     border-radius: 4px;
 }
 ```
 
-- [ ] **Step 4: Label icon controls and bind More state**
+- [x] **Step 4: Label icon controls and bind More state**
 
 For download, copy, More, and Note close:
 
@@ -857,7 +881,7 @@ aria-controls="rc-overflow-menu"
 
 Give the conditional disclosure `id="rc-overflow-menu"`. Add `type="button"` to overflow action buttons, but do not add menu roles.
 
-- [ ] **Step 5: Run GREEN checks and commit**
+- [x] **Step 5: Run GREEN checks, incorporate follow-up review, and commit**
 
 ```powershell
 npm test -- tests/dom/panel/mount.test.ts tests/dom/panel/mount-action-feedback.test.ts
@@ -866,7 +890,17 @@ git add -- src/panel/panel-view.ts tests/dom/panel/mount.test.ts
 git commit -m "fix: expose panel control semantics"
 ```
 
-Expected: semantic, interaction, feedback, and type checks pass.
+After the label-in-name/contrast review correction, also run and commit:
+
+```powershell
+npm test -- tests/dom/panel/mount.test.ts -t "label in name|English|focus outline"
+npm test -- tests/dom/panel/mount.test.ts tests/dom/panel/mount-action-feedback.test.ts
+npm exec tsc -- --noEmit --pretty false
+git add -- src/panel/panel-view.ts tests/dom/panel/mount.test.ts
+git commit -m "fix: meet panel accessibility requirements"
+```
+
+Expected: Chinese and English naming, focus contrast, semantic, interaction, feedback, and type checks pass.
 
 ---
 
@@ -882,7 +916,7 @@ Expected: semantic, interaction, feedback, and type checks pass.
 - Documents instance-owned presentation/action state and the non-gating layout boundary.
 - Does not change settings schemas, runtime messages, or manifest permissions.
 
-- [ ] **Step 1: Correct Panel architecture ownership**
+- [x] **Step 1: Correct Panel architecture ownership**
 
 Replace the module-level collapse description with:
 
@@ -894,7 +928,7 @@ Replace the module-level collapse description with:
 
 Update the `reset(next)` paragraph to include collapse and action-feedback reset.
 
-- [ ] **Step 2: Update developer regression guidance**
+- [x] **Step 2: Update developer regression guidance**
 
 Add under “常见故障定位”:
 
@@ -906,7 +940,7 @@ Add under “常见故障定位”:
 
 Replace “修改 Panel UI” language that describes module-level collapse. Add non-gating smoke rows for collapsed More hit-testing and clipboard/download user activation; leave them unverified unless actually executed.
 
-- [ ] **Step 3: Run fresh complete verification**
+- [x] **Step 3: Run fresh complete verification**
 
 ```powershell
 npm test
@@ -924,7 +958,7 @@ Expected:
 - `git diff --check` prints nothing;
 - status contains only intentional tracked files and no `dist/`.
 
-- [ ] **Step 4: Mark completed checkboxes and commit docs**
+- [x] **Step 4: Mark completed checkboxes and commit docs**
 
 Only after observing each RED/GREEN command, change its corresponding `- [ ]` to `- [x]`.
 

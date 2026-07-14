@@ -67,7 +67,7 @@ src/content.ts
 - 每个 session 持有自己的 `AbortController`、host、panel handle、canonical `PanelData` 和 observer disposer。替换/离开时先把它从 active slot 移除，再 abort、停止 observer、dispose panel 并移除 host；旧加载结果和旧 panel callback 只有在 session 仍 active 时才可写入。
 - 加载成功或失败都会写入 canonical terminal data；Bilibili/API 异常显示 error，而不是永久 loading。
 - `#readable-captions-root` 插入 `div.bpx-player-auxiliary` 顶部，UI 位于 open Shadow Root。MutationObserver 发现 host 被页面移除时，会把**同一个 host 和 panel handle**重新 prepend，并用 canonical data 调用 `updateData()`；不会 remount/reset，也不会丢失已提交的语言。
-- Panel 的 `reset(next)` 会取消待渲染 frame、字幕请求和三类生成工作，替换 per-video data，恢复 `original` mode、清除用户选 tab 标记并关闭 Note，然后重新渲染；panel 实例仍存活，因此保留 long-lived public-settings watcher 和 document pointer listener。`dispose()` 才会在取消这些 pending work 之外标记实例结束、停止 watcher 并移除 document listener；同一 host 再次 mount 时会先调用保存的 disposer。
+- Panel 的 `reset(next)` 会取消待渲染 frame、字幕请求和三类生成工作，使旧导出结果失效并清除反馈 timer，替换 per-video data，恢复 `original` mode、清除用户选 tab 标记、关闭 Note/More 并展开 Panel，然后重新渲染；panel 实例仍存活，因此保留 long-lived public-settings watcher 和 document pointer listener。`dispose()` 也会使导出反馈失效，并在取消 pending work 之外标记实例结束、停止 watcher、移除 document listener；同一 host 再次 mount 时会先调用保存的 disposer，新实例从展开状态开始。
 
 ## 字幕获取链路
 
@@ -125,7 +125,7 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 
 ## Panel 状态与渲染
 
-`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含 Lit template/CSS，但当前仍持有 module-level collapse 状态、直接执行时间戳跳转，并负责 Markdown 解析与净化；它不是纯视图函数：
+`src/panel/mount.ts` 负责异步生成、settings watcher、实例状态与 cleanup。`src/panel/panel-view.ts` 主要包含受控的 Lit template/CSS，同时直接执行时间戳跳转并负责 Markdown 解析与净化；它不是纯视图函数：
 
 - 三个 view 为 `original`、`intensive`、`overview`，默认值来自 settings，仓库默认是 `original`。
 - `overview` 和 `intensive` 在首次进入对应 tab 时懒生成；已有文本、进行中或错误态都不会自动重复请求。
@@ -133,7 +133,9 @@ View/WBI envelope 必须是对象且 `code === 0`。缺失/非零 business code�
 - 原文和生成 Markdown 中可识别的时间戳会设置页面 `<video>.currentTime` 并尝试播放。
 - 生成 Markdown 先经 `marked` 转换，再由 DOMPurify 清洗，最后才传给 Lit 的 `unsafeHTML`。
 - 原文可复制为纯文本或带时间戳文本，可下载 TXT 或 SRT；Note 可复制或下载 `.md`。
-- 只有 `isCollapsed` 是 `panel-view.ts` 的 module-level 状态；`isMenuOpen`、`mode`、`uiLanguage`、生成状态和 Note drawer 状态都属于每次 `mountPanel()` 实例。More menu 不依赖隐式重绘关闭：reset、外部 pointer 以及设置、Note、语言动作都会先把该实例的 `isMenuOpen` 显式转为 `false`，再按各自动作需要重绘；menu 关闭时 document pointer handler 会直接返回。
+- `isCollapsed`、`isMenuOpen`、`mode`、`uiLanguage`、三类生成状态、Note drawer 和导出反馈都属于每个 `mountPanel()` 实例。`updateData()` 及 host recovery 保留同一实例的折叠状态；`reset()` 和新的 dispose/remount session 从展开状态开始，任何实例都不能通过 module-level UI state 影响另一个实例。More menu 仍通过 reset、外部 pointer 以及设置、Note、语言动作的显式 close transition 关闭；menu 已关闭时 document pointer handler 会直接返回。
+- More 打开时只通过 `.panel.menu-open { overflow: visible; }` 解除 Panel 自身裁剪，正文仍由 `.content` 的 `overflow-y: auto` 持有滚动。该修复不承诺绕过 Bilibili 祖先的 overflow/stacking context，也不实现 viewport flip/clamp；jsdom 只能验证 class/style contract，不能证明真实页面的几何或 hit-testing。
+- 主内容和 Note 的 copy/download 统一经过 mount-owned action runner：同步 throw 与 Promise rejection 进入同一边界，UI 只呈现固定本地化 success/error。request version 实现 latest-wins；反馈在 2500 ms 后清除，新动作、reset 和 dispose 会清 timer 并使旧结果失效。export helper 在 `finally` 中清理 fallback textarea/selection 与临时 anchor，并保证即使激活失败也会安排 blob URL 回收。
 - 流式 token 只为当前可见 task 调度 `requestAnimationFrame`；同一 frame 内的多个 token 合并成一次 Lit render。完成/错误立即 flush，tab 切换、reset、dispose 和其他同步 render 会取消旧 frame，隐藏 task 不因 token 重绘。
 - 标题提取只删除文档标题末尾的 `_哔哩哔哩_bilibili` 或 ` - 哔哩哔哩` suffix；`GPT-5`、`A-B-C` 等合法内部连字符保留。下载时仅用 `/[\\/:*?"<>|]/g` 把非法文件名字符替换为 `_`，生成文件再追加 `_overview`、`_intensive` 或 `_note`。
 
