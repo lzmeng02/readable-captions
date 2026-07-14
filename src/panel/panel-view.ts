@@ -68,9 +68,15 @@ export function panelTemplate(
     const settingsReady = uiOptions.settingsStatus === "ready";
     const isCollapsed = uiOptions.isCollapsed;
     const isMenuOpen = uiOptions.isMenuOpen;
-    const collapseLabel = isCollapsed
+    const panelVisibleName = currentLang === "zh"
+        ? "可读字幕 Readable Captions"
+        : "Readable Captions";
+    const collapseAction = isCollapsed
         ? (currentLang === "zh" ? "展开面板" : "Expand panel")
         : (currentLang === "zh" ? "收起面板" : "Collapse panel");
+    const collapseLabel = currentLang === "zh"
+        ? `${panelVisibleName}，${collapseAction}`
+        : `${panelVisibleName}, ${collapseAction}`;
 
     const toggleCollapse = () => {
         uiOptions.onCollapsedChange(!isCollapsed);
@@ -686,7 +692,7 @@ export const panelStyles = css`
     }
 
     .title-area:focus-visible {
-        outline: 2px solid #00aeec;
+        outline: 2px solid #0077a3;
         outline-offset: 2px;
         border-radius: 4px;
     }

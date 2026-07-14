@@ -394,18 +394,97 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
-    it("exposes the collapse control as a named native button with expanded state", () => {
+    it("exposes the collapse control with label in name and expanded state", () => {
         const { host, handle } = mountReadyPanel();
         try {
             const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
             expect(control).not.toBeNull();
-            expect(control?.getAttribute("aria-label")).toBe("收起面板");
+            expect.soft(control?.getAttribute("aria-label"))
+                .toBe("可读字幕 Readable Captions，收起面板");
+            expect.soft(control?.getAttribute("title"))
+                .toBe("可读字幕 Readable Captions，收起面板");
             expect(control?.getAttribute("aria-expanded")).toBe("true");
             control?.click();
 
             const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
-            expect(collapsed?.getAttribute("aria-label")).toBe("展开面板");
+            expect.soft(collapsed?.getAttribute("aria-label"))
+                .toBe("可读字幕 Readable Captions，展开面板");
+            expect.soft(collapsed?.getAttribute("title"))
+                .toBe("可读字幕 Readable Captions，展开面板");
             expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("localizes control accessibility in English", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            clickAction(host, "更多");
+            const language = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("语言：中文"));
+            if (!language) throw new Error("Missing language action");
+            language.click();
+
+            const download = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Download current content"]',
+            );
+            const copy = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Copy current content"]',
+            );
+            const more = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="More"]',
+            );
+            expect.soft(download?.getAttribute("title")).toBe("Download current content");
+            expect.soft(copy?.getAttribute("title")).toBe("Copy current content");
+            expect.soft(more?.getAttribute("title")).toBe("More");
+            expect.soft(more?.getAttribute("aria-expanded")).toBe("false");
+            expect.soft(more?.getAttribute("aria-controls")).toBe("rc-overflow-menu");
+
+            more?.click();
+            const openMore = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="More"]',
+            );
+            expect.soft(openMore?.getAttribute("aria-expanded")).toBe("true");
+            expect(host.shadowRoot?.querySelector("#rc-overflow-menu")).not.toBeNull();
+            openMore?.click();
+
+            const control = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect.soft(control?.getAttribute("aria-label"))
+                .toBe("Readable Captions, Collapse panel");
+            expect.soft(control?.getAttribute("title"))
+                .toBe("Readable Captions, Collapse panel");
+            expect(control?.getAttribute("aria-expanded")).toBe("true");
+            control?.click();
+
+            const collapsed = host.shadowRoot?.querySelector<HTMLButtonElement>("button.title-area");
+            expect.soft(collapsed?.getAttribute("aria-label"))
+                .toBe("Readable Captions, Expand panel");
+            expect.soft(collapsed?.getAttribute("title"))
+                .toBe("Readable Captions, Expand panel");
+            expect(collapsed?.getAttribute("aria-expanded")).toBe("false");
+            collapsed?.click();
+
+            clickAction(host, "More");
+            const note = [...host.shadowRoot!.querySelectorAll<HTMLButtonElement>("button.overflow-item")]
+                .find((button) => button.textContent?.includes("Export Markdown Note"));
+            if (!note) throw new Error("Missing Note action");
+            note.click();
+            const close = host.shadowRoot?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Close Markdown Note"]',
+            );
+            expect.soft(close?.getAttribute("title")).toBe("Close Markdown Note");
+            expect(close?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+        } finally {
+            handle.dispose();
+        }
+    });
+
+    it("uses the sufficient-contrast collapse focus outline", () => {
+        const { host, handle } = mountReadyPanel();
+        try {
+            expect(host.shadowRoot?.querySelector("style[data-rc]")?.textContent)
+                .toMatch(/\.title-area:focus-visible\s*\{[^}]*outline:\s*2px solid #0077a3/s);
         } finally {
             handle.dispose();
         }
