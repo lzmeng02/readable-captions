@@ -116,7 +116,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | Options reset 后显示值与 save 不同 | Lit `.value`/`.checked` property binding | `tests/dom/options/options-live-controls.test.ts` |
 | Chrome Autofill/恢复把一个 provider 的 key/model 带到另一个 provider，或 authoritative reset 后仍显示旧值 | provider-keyed credential/model DOM、API key 的非 password-manager attributes、三个 `live()` binding、reveal reset transitions | `tests/dom/options/options-provider-profiles.test.ts`、`tests/dom/options/options-live-controls.test.ts` |
 | MV3 settings port 断开后 Panel 仍可生成、一直 error 或重复使用 defaults | public client outage callback、connection generation/active-port identity、100–5000 ms reconnect backoff、valid-snapshot recovery | `tests/unit/settings/public-client.test.ts`、`tests/dom/panel/mount-settings-readiness.test.ts` |
-| More menu 点击外部或切换语言后仍停留 | `mountPanel()` 的 instance state 与 outside/action explicit close transition | `tests/dom/panel/mount.test.ts` |
+| 点击 Panel A 的 More 区域后 Panel B 仍打开、页面同名 class 阻止关闭，或 menu action 影响其他 Panel | outside pointer 必须按每个 mount 自己的 wrapper 节点 identity 判断；menu action 的 explicit close 只修改 originating panel | `tests/dom/panel/mount.test.ts` |
 | 折叠一个 Panel 后，新视频或另一个 Panel 也被折叠 | `mountPanel()` 的 per-instance `isCollapsed`、reset 与 dispose/remount 边界 | `tests/dom/panel/mount.test.ts` |
 | 折叠后 More 菜单不可见 | `.panel.menu-open` overflow escape；不要把 jsdom DOM 断言冒充真实布局 | `tests/dom/panel/mount.test.ts`；真实 Chrome/Bilibili 仍非门禁 |
 | 复制/下载点击后无结果或失败泄漏临时 DOM/blob URL | mount-owned action version/timer、safe feedback、export helper `finally` cleanup | `tests/dom/panel/mount-action-feedback.test.ts`、`tests/unit/panel/export-utils.test.ts` |
@@ -156,7 +156,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 | Providers | 分别用获授权的 OpenAI 与 DeepSeek 凭据生成 | 每边只用自己的 profile/endpoint，payload 兼容并完成 streaming |
 | Streaming | Cancel/retry a long generation | No partial success; worker stays active |
 | Options | Change/reset/save General and Export controls | Displayed values equal saved values |
-| More menu | 打开 More 后点击外部，再打开并切换语言 | 两个动作都显式关闭当前 panel 实例的 menu；其他实例不受影响 |
+| More menu | 同时打开 A/B：点击 A 的 More wrapper；重开后点击页面同名 class；再次重开并在 A 切换语言 | A wrapper pointer 只保留 A 并关闭 B；页面同名 class 对两者都是外部；语言 action 只关闭 originating A，不影响 B |
 | Collapsed More | 折叠 Panel 后打开 More，并用鼠标/键盘触发各项 | menu 不被 Panel 自身裁剪且可 hit-test；另行观察 Bilibili 祖先裁剪和小 viewport |
 | Export activation | 在主内容与 Note 中分别复制和下载 | 真实 user activation 下 clipboard/download 可触发；成功/失败反馈安全且临时资源被清理 |
 | Dev | Start dev and trigger content rebuild | All five artifacts remain |
@@ -171,6 +171,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 |---|---|---|---|
 | Real Chrome Options / MV3 runtime | 未验证 | 当前自动化环境未提供可交互的已加载扩展 session，未实测 password manager/autofill、service-worker suspension 或 port recovery | 非门禁 |
 | Real Bilibili page | 未验证 | 未提供可复现测试 URL 与可交互登录页面，未实测字幕页面生命周期 | 非门禁 |
+| Multi-panel More ownership | 未验证 | 当前自动化环境未提供已加载扩展的真实多 Panel Chrome 页面；只完成 jsdom 节点 identity 回归 | 非门禁 |
 | Collapsed More hit-testing | 未验证 | 当前自动化环境未提供已加载扩展的真实 Bilibili 页面；jsdom 不能证明裁剪、stacking context 或 hit-testing | 非门禁 |
 | Clipboard/download user activation | 未验证 | 当前自动化环境未提供可交互的已加载扩展 session，未实测真实 clipboard permission 与 download activation | 非门禁 |
 | Authenticated OpenAI / DeepSeek | 未验证 | 未提供获授权的真实 provider 凭据；没有发送真实请求 | 非门禁 |
@@ -218,7 +219,7 @@ Watcher 仍只观察/rebuild content：改动 background、options、manifest �
 ### 修改 Panel UI
 
 1. 异步生成、settings watcher、实例生命周期和 cleanup 放在 `mount.ts`。
-2. 折叠、More menu、mode、UI language、生成、Note drawer 和导出反馈都由每个 `mountPanel()` 实例拥有，`panel-view.ts` 通过受控值/回调渲染这些状态。outside pointer、reset 和 menu actions 都必须通过明确的 `isMenuOpen = false` / `onMenuOpenChange(false)` transition 关闭；`updateData()` 保留同实例折叠，reset 与新 dispose/remount session 展开。`panel-view.ts` 仍直接处理时间戳跳转和 Markdown 渲染，因此不要假定它是纯函数。
+2. 折叠、More menu、mode、UI language、生成、Note drawer 和导出反馈都由每个 `mountPanel()` 实例拥有，`panel-view.ts` 通过受控值/回调渲染这些状态。outside pointer 必须按该 mount 自己的 wrapper 节点 identity 判断并关闭 path 外的实例；reset 和 originating panel 的 menu action 都必须通过明确的 `isMenuOpen = false` / `onMenuOpenChange(false)` transition 关闭。`updateData()` 保留同实例折叠，reset 与新 dispose/remount session 展开。`panel-view.ts` 仍直接处理时间戳跳转和 Markdown 渲染，因此不要假定它是纯函数。
 3. 保持 Shadow DOM 隔离和三视图产品边界。
 4. 新增长生命周期的 document/storage/runtime listener 时，在 session/panel cleanup 中成对注销，并为 replacement、unsupported route、host recovery 和 dispose 增加测试。
 5. 不把动态、不可信 Markdown 直接交给 `unsafeHTML`；保持 `marked` → DOMPurify → `unsafeHTML`。

@@ -577,8 +577,8 @@ export function mountPanel(
 
     const handlePointerDown = (event: PointerEvent): void => {
         if (!isMenuOpen) return;
-        const isInside = event.composedPath()
-            .some((node: any) => node?.classList?.contains("more-actions-wrapper"));
+        const ownWrapper = shadow.querySelector(".more-actions-wrapper");
+        const isInside = ownWrapper !== null && event.composedPath().includes(ownWrapper);
         if (!isInside) {
             isMenuOpen = false;
             renderPanel();

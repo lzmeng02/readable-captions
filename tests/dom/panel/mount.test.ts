@@ -356,6 +356,43 @@ describe("mountPanel lifecycle", () => {
         }
     });
 
+    it("scopes outside pointers to each panel's own More wrapper", () => {
+        const first = mountReadyPanel();
+        const second = mountReadyPanel();
+        const decoy = document.createElement("div");
+        decoy.className = "more-actions-wrapper";
+        document.body.append(decoy);
+
+        try {
+            clickAction(first.host, "更多");
+            clickAction(second.host, "更多");
+            const firstWrapper = first.host.shadowRoot?.querySelector<HTMLElement>(
+                ".more-actions-wrapper",
+            );
+            const firstMoreButton = firstWrapper?.querySelector<HTMLButtonElement>(
+                'button[title="更多"]',
+            );
+            if (!firstMoreButton) throw new Error("Missing first panel More button");
+
+            firstMoreButton.dispatchEvent(new Event("pointerdown", {
+                bubbles: true,
+                composed: true,
+            }));
+
+            expect(moreMenu(first.host)).not.toBeNull();
+            expect(moreMenu(second.host)).toBeNull();
+
+            clickAction(second.host, "更多");
+            decoy.dispatchEvent(new Event("pointerdown", { bubbles: true, composed: true }));
+
+            expect(moreMenu(first.host)).toBeNull();
+            expect(moreMenu(second.host)).toBeNull();
+        } finally {
+            first.handle.dispose();
+            second.handle.dispose();
+        }
+    });
+
     it("closes the More menu when language is changed", () => {
         const { host, handle } = mountReadyPanel();
 
